@@ -1,0 +1,6 @@
+{
+  "name": "Snel Krediet België - Online Leningen & Kredietadvies",
+  "description": "Professionele en verantwoorde kredietbemiddeling in België. Bereken uw lening online en doe een vrijblijvende aanvraag voor persoonlijke leningen en financieringen.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

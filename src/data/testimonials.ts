@@ -1,0 +1,103 @@
+import { TestimonialItem } from '../types';
+
+export const TESTIMONIALS_DATA: TestimonialItem[] = [
+  {
+    id: 'test-1',
+    name: 'Peter & Els V.',
+    location: 'Gent (Oost-Vlaanderen)',
+    purpose: 'verbouwing',
+    purposeLabel: 'Renovatielening & Energie',
+    amount: 22000,
+    rating: 5,
+    highlight: 'Transparant voorstel binnen 24 uur en vaste rentevoet',
+    review:
+      'Voor de renovatie van onze woning en de plaatsing van zonnepanelen zochten we een krediet zonder verborgen verrassingen. Snel Krediet vergeleek de beste rentevoeten en binnen 24 uur kregen we al een helder voorstel. De deskundige begeleiding gaf ons direct gemoedsrust.',
+    date: '2 weken geleden',
+    verified: true,
+    avatarInitials: 'PV',
+  },
+  {
+    id: 'test-2',
+    name: 'Dimitri M.',
+    location: 'Antwerpen (Centrum)',
+    purpose: 'auto',
+    purposeLabel: 'Autolening Tweedehands',
+    amount: 14500,
+    rating: 5,
+    highlight: 'Vlotte en discrete communicatie zonder papierberg',
+    review:
+      'Vlotte en uiterst discrete communicatie. Geen overbodig papierwerk, alles kon ik digitaal aanleveren. De adviseur in Brussel heeft me telefonisch perfect begeleid en meegedacht met mijn situatie. Zeer tevreden over de snelle afhandeling!',
+    date: '3 weken geleden',
+    verified: true,
+    avatarInitials: 'DM',
+  },
+  {
+    id: 'test-3',
+    name: 'Anouck & Thomas D.',
+    location: 'Leuven (Vlaams-Brabant)',
+    purpose: 'hergroepering',
+    purposeLabel: 'Kredietsamenvoeging',
+    amount: 28000,
+    rating: 5,
+    highlight: 'We besparen nu maandelijks meer dan 180 euro',
+    review:
+      'We hadden meerdere kleine leningen en kredietkaarten lopen. Dankzij de hergroepering van Snel Krediet betalen we nu nog maar één overzichtelijke maandlast tegen een vaste rente. Een enorme opluchting voor ons gezinsbudget!',
+    date: '1 maand geleden',
+    verified: true,
+    avatarInitials: 'AD',
+  },
+  {
+    id: 'test-4',
+    name: 'Klaas B.',
+    location: 'Brugge (West-Vlaanderen)',
+    purpose: 'persoonlijk',
+    purposeLabel: 'Persoonlijke Lening',
+    amount: 8500,
+    rating: 5,
+    highlight: 'Heldere uitleg over het JKP en strikt volgens de wet',
+    review:
+      'Heldere uitleg over het JKP en de voorwaarden. Geen valse beloftes, maar eerlijk en professioneel advies volgens de Belgische wetgeving (Boek VII WER). Een absolute aanrader voor wie betrouwbare kredietbemiddeling zoekt.',
+    date: '1 maand geleden',
+    verified: true,
+    avatarInitials: 'KB',
+  },
+  {
+    id: 'test-5',
+    name: 'Nadia K.',
+    location: 'Brussel (Schaarbeek)',
+    purpose: 'persoonlijk',
+    purposeLabel: 'Persoonlijke Lening Inrichting',
+    amount: 6000,
+    rating: 5,
+    highlight: 'Persoonlijke aandacht voor terugbetalingscapaciteit',
+    review:
+      'Zeer professioneel team in Brussel. Ze nemen de tijd om echt naar je leefsituatie te luisteren en controleren zorgvuldig of de maandlast realistisch en verantwoord blijft. Binnen 2 dagen was alles officieel in orde.',
+    date: '2 maanden geleden',
+    verified: true,
+    avatarInitials: 'NK',
+  },
+  {
+    id: 'test-6',
+    name: 'Johan & Martine V.',
+    location: 'Hasselt (Limburg)',
+    purpose: 'verbouwing',
+    purposeLabel: 'Energielening Warmtepomp',
+    amount: 16000,
+    rating: 5,
+    highlight: 'Vaste rente en duidelijke aflossingstabel',
+    review:
+      'Vaste rente, een kristalheldere aflossingstabel en uitstekende bereikbaarheid. De online simulator gaf vooraf al een exact beeld van de maandelijkse kostprijs. Heel geruststellend dat ze erkend zijn door de FSMA.',
+    date: '2 maanden geleden',
+    verified: true,
+    avatarInitials: 'JV',
+  },
+];
+
+export const TRUST_METRICS = {
+  overallRating: 4.9,
+  maxRating: 5.0,
+  totalReviews: 874,
+  recommendationRate: '98%',
+  satisfactionGuarantee: '100% Erkende & geverifieerde dossiers',
+  averageResponseTime: 'Binnen 24u werkdagen',
+};
