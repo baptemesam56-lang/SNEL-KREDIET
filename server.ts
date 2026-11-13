@@ -56,7 +56,7 @@ const SENDER_EMAIL = process.env.SMTP_FROM || 'Snel Krediet <contact@snelkrediet
 const NOTIFICATION_DESTINATION = process.env.NOTIFICATION_EMAIL || 'contact@snelkrediet.eu';
 
 // Health check endpoint
-app.get('/api/health', (req: Request, res: Response) => {
+app.get(['/api/health', '/api/health.php'], (req: Request, res: Response) => {
   res.json({
     status: 'ok',
     emailConfigured: !!(process.env.SMTP_USER && process.env.SMTP_PASS),
@@ -87,7 +87,7 @@ function escapeHtml(value: unknown): string {
 // ---------------------------------------------------------------------
 // 1. POST /api/contact - Handle Contact Form Inquiries
 // ---------------------------------------------------------------------
-app.post('/api/contact', async (req: Request, res: Response) => {
+app.post(['/api/contact', '/api/contact.php'], async (req: Request, res: Response) => {
   try {
     const { fullName, email, phone, country, countryCode, subject, message } = req.body;
 
@@ -259,7 +259,7 @@ app.post('/api/contact', async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------
 // 2. POST /api/loan-application - Handle Credit Application Submissions
 // ---------------------------------------------------------------------
-app.post('/api/loan-application', async (req: Request, res: Response) => {
+app.post(['/api/loan-application', '/api/loan-application.php'], async (req: Request, res: Response) => {
   try {
     const {
       amount,
@@ -553,6 +553,13 @@ async function startServer() {
     process.env.npm_lifecycle_event === 'start';
 
   if (isProdMode && fs.existsSync(distIndex)) {
+    // Never serve PHP source files or .htaccess via Express static middleware
+    app.use((req: Request, res: Response, next) => {
+      if (req.path.endsWith('.php') || req.path.includes('.htaccess')) {
+        return res.status(404).json({ success: false, error: 'Not found' });
+      }
+      return next();
+    });
     app.use(express.static(distPath));
     app.get('*', (_req: Request, res: Response) => {
       res.sendFile(distIndex);

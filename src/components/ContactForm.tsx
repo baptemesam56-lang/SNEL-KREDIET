@@ -15,8 +15,7 @@ import { COMPANY_INFO } from '../data/content';
 import { COUNTRIES, getCountryByCode } from '../data/countries';
 import {
   formatInternationalPhone,
-  getApiUrl,
-  safeParseJsonResponse,
+  submitApiPost,
 } from '../utils/countryDetection';
 
 interface ContactFormProps {
@@ -109,32 +108,24 @@ export const ContactForm: React.FC<ContactFormProps> = ({
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(getApiUrl('/api/contact'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          fullName: formData.fullName.trim(),
-          email: formData.email.trim(),
-          phone: fullInternationalPhone,
-          country: selectedCountry.name,
-          countryCode: selectedCountry.code,
-          subject: formData.subject,
-          message: formData.message.trim(),
-        }),
+      const { response, isJson, data } = await submitApiPost('/api/contact', {
+        fullName: formData.fullName.trim(),
+        email: formData.email.trim(),
+        phone: fullInternationalPhone,
+        country: selectedCountry.name,
+        countryCode: selectedCountry.code,
+        subject: formData.subject,
+        message: formData.message.trim(),
       });
 
-      const parsed = await safeParseJsonResponse(response);
-
-      if (!parsed.isJson) {
+      if (!isJson) {
         throw new Error(
           `De contactserver gaf een onverwacht antwoord (HTTP ${response.status}). U kunt rechtstreeks mailen naar contact@snelkrediet.eu of bellen via ${COMPANY_INFO.phone}.`
         );
       }
 
-      if (!response.ok || !parsed.data?.success) {
-        throw new Error(parsed.data?.error || 'Er is een fout opgetreden bij het verzenden.');
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || 'Er is een fout opgetreden bij het verzenden.');
       }
 
       setIsSubmitted(true);

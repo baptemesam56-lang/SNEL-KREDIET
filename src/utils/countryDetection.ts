@@ -39,3 +39,50 @@ export async function safeParseJsonResponse(response: Response): Promise<{
   }
   return { isJson: false, data: null, rawText };
 }
+
+/**
+ * Posts JSON to the primary Node.js / Express endpoint (e.g. /api/loan-application)
+ * and automatically falls back to the PHP endpoint (e.g. /api/loan-application.php)
+ * when hosted on shared web hosting (such as Hostinger hPanel) without Node routing.
+ */
+export async function submitApiPost(
+  endpoint: string,
+  payload: unknown
+): Promise<{ response: Response; isJson: boolean; data: any }> {
+  const primaryUrl = getApiUrl(endpoint);
+  const requestInit: RequestInit = {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  };
+
+  let response = await fetch(primaryUrl, requestInit);
+  let parsed = await safeParseJsonResponse(response);
+
+  // If primary endpoint returned 404/405 or HTML (e.g. Hostinger static/PHP without rewrite), try .php handler
+  if (!parsed.isJson || response.status === 404 || response.status === 405) {
+    const phpEndpoint = endpoint.endsWith('.php') ? endpoint : `${endpoint}.php`;
+    const phpUrl = getApiUrl(phpEndpoint);
+    try {
+      const phpResponse = await fetch(phpUrl, requestInit);
+      const phpParsed = await safeParseJsonResponse(phpResponse);
+      if (phpParsed.isJson) {
+        return {
+          response: phpResponse,
+          isJson: true,
+          data: phpParsed.data,
+        };
+      }
+    } catch {
+      // Fall through to return primary response details
+    }
+  }
+
+  return {
+    response,
+    isJson: parsed.isJson,
+    data: parsed.data,
+  };
+}

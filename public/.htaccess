@@ -1,0 +1,24 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Block direct web access to internal mailer helper or env files
+  RewriteRule ^api/_mailer\.php$ - [F,L]
+  RewriteRule ^\.env - [F,L]
+
+  # Route clean /api/* endpoints to PHP handlers on Hostinger / Apache
+  RewriteRule ^api/contact/?$ /api/contact.php [L,QSA]
+  RewriteRule ^api/loan-application/?$ /api/loan-application.php [L,QSA]
+  RewriteRule ^api/health/?$ /api/health.php [L,QSA]
+
+  # Serve existing files and directories directly
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Do not rewrite unknown /api/* paths to index.html
+  RewriteRule ^api/ - [R=404,L]
+
+  # React SPA fallback
+  RewriteRule ^ /index.html [L]
+</IfModule>

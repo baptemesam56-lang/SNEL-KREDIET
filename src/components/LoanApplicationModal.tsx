@@ -4,8 +4,7 @@ import { CREDIT_PURPOSES, COMPANY_INFO } from '../data/content';
 import { COUNTRIES, getCountryByCode } from '../data/countries';
 import {
   formatInternationalPhone,
-  getApiUrl,
-  safeParseJsonResponse,
+  submitApiPost,
 } from '../utils/countryDetection';
 import { calculateLoan, formatEuro } from '../utils/calculator';
 import {
@@ -184,46 +183,38 @@ export const LoanApplicationModal: React.FC<LoanApplicationModalProps> = ({
     setErrorMessage('');
 
     try {
-      const response = await fetch(getApiUrl('/api/loan-application'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          amount,
-          duration,
-          purpose,
-          monthlyPayment: calculation.monthlyPayment,
-          jkp: calculation.jkp,
-          totalRepayment: calculation.totalRepayment,
-          totalInterest: calculation.totalInterest,
-          fullName: fullName.trim(),
-          email: email.trim(),
-          phone: fullInternationalPhone || phone.trim(),
-          country: selectedCountry.name,
-          countryCode: selectedCountry.code,
-          monthlyIncome,
-          housingStatus,
-          employmentType,
-        }),
+      const { response, isJson, data } = await submitApiPost('/api/loan-application', {
+        amount,
+        duration,
+        purpose,
+        monthlyPayment: calculation.monthlyPayment,
+        jkp: calculation.jkp,
+        totalRepayment: calculation.totalRepayment,
+        totalInterest: calculation.totalInterest,
+        fullName: fullName.trim(),
+        email: email.trim(),
+        phone: fullInternationalPhone || phone.trim(),
+        country: selectedCountry.name,
+        countryCode: selectedCountry.code,
+        monthlyIncome,
+        housingStatus,
+        employmentType,
       });
 
-      const parsed = await safeParseJsonResponse(response);
-
-      if (!parsed.isJson) {
+      if (!isJson) {
         throw new Error(
           `De server voor aanvragen gaf een onverwacht antwoord (HTTP ${response.status}). Neem gerust rechtstreeks contact op via contact@snelkrediet.eu of bel ${COMPANY_INFO.phone}.`
         );
       }
 
-      if (!response.ok || !parsed.data?.success) {
+      if (!response.ok || !data?.success) {
         throw new Error(
-          parsed.data?.error || 'Er is een fout opgetreden bij het indienen van uw aanvraag.'
+          data?.error || 'Er is een fout opgetreden bij het indienen van uw aanvraag.'
         );
       }
 
       setReferenceCode(
-        parsed.data.reference ||
+        data.reference ||
           `SK-${selectedCountry.code}-${Math.floor(100000 + Math.random() * 900000)}`
       );
       setIsSubmitted(true);
