@@ -5,6 +5,7 @@ import { THEMES } from '../utils/theme';
 import { LoanCalculator } from '../components/LoanCalculator';
 import { HeroLoanWidget } from '../components/HeroLoanWidget';
 import { Testimonials } from '../components/Testimonials';
+import { TrustpilotSection } from '../components/TrustpilotSection';
 import { ClientStories } from '../components/ClientStories';
 import { ContactForm } from '../components/ContactForm';
 import advisoryTeamImg from '../assets/images/belgian_finance_advisory_team_1794258355459.jpg';
@@ -232,11 +233,33 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 </button>
               </div>
 
-              {/* Statutory Micro Note */}
-              <div className="text-xs text-slate-400 flex items-center gap-1.5 pt-2">
-                <span className="font-semibold text-amber-500">{COMPANY_INFO.legalDisclaimer}</span>
-                <span>·</span>
-                <span>Consumentenkrediet in België</span>
+              {/* Statutory Micro Note + Trustpilot Quick Pill */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pt-2">
+                <div className="text-xs text-slate-400 flex items-center gap-1.5">
+                  <span className="font-semibold text-amber-500">{COMPANY_INFO.legalDisclaimer}</span>
+                  <span>·</span>
+                  <span>Consumentenkrediet in België</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const el = document.getElementById('trustpilot-reviews');
+                    if (el) el.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] font-semibold transition-colors ${
+                    isLightHero
+                      ? 'bg-white/90 hover:bg-white border-emerald-200 text-slate-800 shadow-2xs'
+                      : 'bg-white/10 hover:bg-white/20 border-white/20 text-white'
+                  }`}
+                >
+                  <span className="inline-flex items-center gap-0.5 text-[#00B67A]" aria-hidden="true">
+                    ★★★★★
+                  </span>
+                  <span>Trustpilot</span>
+                  <span className={isLightHero ? 'text-[#007A52] font-bold' : 'text-emerald-300 font-bold'}>
+                    4,8 / 5
+                  </span>
+                </button>
               </div>
             </div>
 
@@ -343,6 +366,11 @@ export const HomeView: React.FC<HomeViewProps> = ({
           onStartApplication={(amt, dur, purp) => onOpenApplicationModal(amt, dur, purp)}
         />
       </section>
+
+      {/* TRUSTPILOT VERIFIED REVIEWS SECTION */}
+      <TrustpilotSection
+        onStartApplication={(purp) => onOpenApplicationModal(undefined, undefined, purp)}
+      />
 
       {/* 4 CORE CREDIT SOLUTIONS SHOWCASE */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

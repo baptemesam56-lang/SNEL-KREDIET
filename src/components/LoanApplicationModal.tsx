@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CreditPurpose } from '../types';
 import { CREDIT_PURPOSES, COMPANY_INFO } from '../data/content';
 import { COUNTRIES, getCountryByCode } from '../data/countries';
 import {
-  detectVisitorCountry,
   formatInternationalPhone,
   getApiUrl,
   safeParseJsonResponse,
@@ -23,7 +22,6 @@ import {
   User,
   FileCheck,
   Globe,
-  LocateFixed,
   Phone,
   Mail,
 } from 'lucide-react';
@@ -75,13 +73,10 @@ export const LoanApplicationModal: React.FC<LoanApplicationModalProps> = ({
   const [duration, setDuration] = useState<number>(initialDuration);
   const [purpose, setPurpose] = useState<CreditPurpose>(initialPurpose);
 
-  // Country & international phone states
+  // Country & international phone states (default: België / +32)
   const [countryCode, setCountryCode] = useState<string>('BE');
   const [phoneCountryCode, setPhoneCountryCode] = useState<string>('BE');
   const [dialOverridden, setDialOverridden] = useState<boolean>(false);
-  const [autoDetectCountry, setAutoDetectCountry] = useState<boolean>(true);
-  const [isDetectingCountry, setIsDetectingCountry] = useState<boolean>(false);
-  const [detectionMessage, setDetectionMessage] = useState<string>('');
 
   // Applicant info
   const [fullName, setFullName] = useState('');
@@ -131,36 +126,6 @@ export const LoanApplicationModal: React.FC<LoanApplicationModalProps> = ({
     };
   }, [isOpen, onClose]);
 
-  const runCountryDetection = useCallback(
-    async (forceUpdateDial = false) => {
-      setIsDetectingCountry(true);
-      try {
-        const result = await detectVisitorCountry();
-        setCountryCode(result.country.code);
-        if (forceUpdateDial || !dialOverridden) {
-          setPhoneCountryCode(result.country.code);
-        }
-        const sourceLabel =
-          result.method === 'default'
-            ? `Standaard geselecteerd: ${result.country.flag} ${result.country.name}`
-            : `Automatisch gedetecteerd: ${result.country.flag} ${result.country.name} (${result.country.dialCode})`;
-        setDetectionMessage(sourceLabel);
-      } catch {
-        setDetectionMessage('Selecteer uw land handmatig in de lijst.');
-      } finally {
-        setIsDetectingCountry(false);
-      }
-    },
-    [dialOverridden]
-  );
-
-  // Auto-detect visitor country when modal opens & option is enabled
-  useEffect(() => {
-    if (isOpen && autoDetectCountry) {
-      runCountryDetection(false);
-    }
-  }, [isOpen, autoDetectCountry, runCountryDetection]);
-
   if (!isOpen) return null;
 
   const calculation = calculateLoan(amount, duration, purpose);
@@ -170,8 +135,6 @@ export const LoanApplicationModal: React.FC<LoanApplicationModalProps> = ({
     if (!dialOverridden) {
       setPhoneCountryCode(newCode);
     }
-    const c = getCountryByCode(newCode);
-    setDetectionMessage(`Geselecteerd land: ${c.flag} ${c.name} (${c.dialCode})`);
   };
 
   const handlePhoneCountryChange = (newCode: string) => {
@@ -656,49 +619,12 @@ export const LoanApplicationModal: React.FC<LoanApplicationModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Country Selection & Auto-Detection Card */}
-                  <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-xl space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <label htmlFor="applicant-country" className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
-                        <Globe className="w-3.5 h-3.5 text-[#0F4C81]" />
-                        <span>Land van verblijf *</span>
-                      </label>
-                      <div className="flex items-center gap-2.5">
-                        <label className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-600 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={autoDetectCountry}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              setAutoDetectCountry(checked);
-                              if (checked) {
-                                setDialOverridden(false);
-                                runCountryDetection(true);
-                              }
-                            }}
-                            className="rounded border-slate-300 text-[#0F4C81] focus:ring-[#0F4C81]"
-                          />
-                          <span>Automatisch land detecteren</span>
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDialOverridden(false);
-                            runCountryDetection(true);
-                          }}
-                          disabled={isDetectingCountry}
-                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0F4C81] hover:text-[#0c3e6b] bg-white px-2 py-0.5 rounded-md border border-blue-200 shadow-2xs disabled:opacity-60"
-                        >
-                          {isDetectingCountry ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <LocateFixed className="w-3 h-3" />
-                          )}
-                          <span>Detecteer nu</span>
-                        </button>
-                      </div>
-                    </div>
-
+                  {/* Country Selection */}
+                  <div>
+                    <label htmlFor="applicant-country" className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+                      <Globe className="w-3.5 h-3.5 text-[#0F4C81]" />
+                      <span>Land van verblijf *</span>
+                    </label>
                     <select
                       id="applicant-country"
                       value={countryCode}
@@ -711,10 +637,6 @@ export const LoanApplicationModal: React.FC<LoanApplicationModalProps> = ({
                         </option>
                       ))}
                     </select>
-
-                    {detectionMessage && (
-                      <p className="text-[11px] text-[#0F4C81] font-medium">{detectionMessage}</p>
-                    )}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

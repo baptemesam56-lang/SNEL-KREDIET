@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
   Send,
   CheckCircle2,
@@ -7,7 +7,6 @@ import {
   Loader2,
   Sparkles,
   Globe,
-  LocateFixed,
   Mail,
   Phone,
 } from 'lucide-react';
@@ -15,7 +14,6 @@ import { ContactFormData } from '../types';
 import { COMPANY_INFO } from '../data/content';
 import { COUNTRIES, getCountryByCode } from '../data/countries';
 import {
-  detectVisitorCountry,
   formatInternationalPhone,
   getApiUrl,
   safeParseJsonResponse,
@@ -45,9 +43,6 @@ export const ContactForm: React.FC<ContactFormProps> = ({
   const [countryCode, setCountryCode] = useState<string>('BE');
   const [phoneCountryCode, setPhoneCountryCode] = useState<string>('BE');
   const [dialOverridden, setDialOverridden] = useState<boolean>(false);
-  const [autoDetectCountry, setAutoDetectCountry] = useState<boolean>(true);
-  const [isDetectingCountry, setIsDetectingCountry] = useState<boolean>(false);
-  const [detectionMessage, setDetectionMessage] = useState<string>('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -58,40 +53,6 @@ export const ContactForm: React.FC<ContactFormProps> = ({
   const fullInternationalPhone = formData.phone.trim()
     ? formatInternationalPhone(selectedPhoneCountry.dialCode, formData.phone)
     : '';
-
-  const runCountryDetection = useCallback(
-    async (forceUpdateDial = false) => {
-      setIsDetectingCountry(true);
-      try {
-        const result = await detectVisitorCountry();
-        setCountryCode(result.country.code);
-        if (forceUpdateDial || !dialOverridden) {
-          setPhoneCountryCode(result.country.code);
-        }
-        setFormData((prev) => ({
-          ...prev,
-          country: result.country.name,
-          countryCode: result.country.code,
-        }));
-        const sourceLabel =
-          result.method === 'default'
-            ? `Standaard geselecteerd: ${result.country.flag} ${result.country.name}`
-            : `Automatisch gedetecteerd: ${result.country.flag} ${result.country.name} (${result.country.dialCode})`;
-        setDetectionMessage(sourceLabel);
-      } catch {
-        setDetectionMessage('Selecteer uw land handmatig in de lijst.');
-      } finally {
-        setIsDetectingCountry(false);
-      }
-    },
-    [dialOverridden]
-  );
-
-  useEffect(() => {
-    if (autoDetectCountry) {
-      runCountryDetection(false);
-    }
-  }, [autoDetectCountry, runCountryDetection]);
 
   const handleCountryChange = (newCode: string) => {
     setCountryCode(newCode);
@@ -104,7 +65,6 @@ export const ContactForm: React.FC<ContactFormProps> = ({
       country: c.name,
       countryCode: c.code,
     }));
-    setDetectionMessage(`Geselecteerd land: ${c.flag} ${c.name} (${c.dialCode})`);
   };
 
   const subjectOptions = [
@@ -303,54 +263,17 @@ export const ContactForm: React.FC<ContactFormProps> = ({
         />
       </div>
 
-      {/* Country Selection + Auto-detection */}
-      <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-xl space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <label htmlFor="contact-country" className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
-            <Globe className="w-3.5 h-3.5 text-[#0F4C81]" />
-            <span>Land van verblijf <span className="text-rose-500">*</span></span>
-          </label>
-          <div className="flex items-center gap-2.5">
-            <label className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-600 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={autoDetectCountry}
-                onChange={(e) => {
-                  const checked = e.target.checked;
-                  setAutoDetectCountry(checked);
-                  if (checked) {
-                    setDialOverridden(false);
-                    runCountryDetection(true);
-                  }
-                }}
-                className="rounded border-slate-300 text-[#0F4C81] focus:ring-[#0F4C81]"
-              />
-              <span>Automatisch land detecteren</span>
-            </label>
-            <button
-              type="button"
-              onClick={() => {
-                setDialOverridden(false);
-                runCountryDetection(true);
-              }}
-              disabled={isDetectingCountry}
-              className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0F4C81] hover:text-[#0c3e6b] bg-white px-2 py-0.5 rounded-md border border-blue-200 shadow-2xs disabled:opacity-60"
-            >
-              {isDetectingCountry ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : (
-                <LocateFixed className="w-3 h-3" />
-              )}
-              <span>Detecteer nu</span>
-            </button>
-          </div>
-        </div>
-
+      {/* Country Selection */}
+      <div>
+        <label htmlFor="contact-country" className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+          <Globe className="w-3.5 h-3.5 text-[#0F4C81]" />
+          <span>Land van verblijf <span className="text-rose-500">*</span></span>
+        </label>
         <select
           id="contact-country"
           value={countryCode}
           onChange={(e) => handleCountryChange(e.target.value)}
-          className="w-full px-3.5 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0F4C81] text-sm bg-white text-slate-900 font-medium"
+          className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0F4C81] text-sm bg-white text-slate-900 font-medium"
         >
           {COUNTRIES.map((c) => (
             <option key={c.code} value={c.code}>
@@ -358,10 +281,6 @@ export const ContactForm: React.FC<ContactFormProps> = ({
             </option>
           ))}
         </select>
-
-        {detectionMessage && (
-          <p className="text-[11px] text-[#0F4C81] font-medium">{detectionMessage}</p>
-        )}
       </div>
 
       {/* Full Name */}
