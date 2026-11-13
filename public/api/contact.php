@@ -83,6 +83,8 @@ $adminHtml = "
 
 $phoneSummaryRow = $phone !== '' ? "<p style=\"margin: 0 0 4px; color: #64748b;\"><strong>Telefoon:</strong> {$safePhone}</p>" : '';
 
+$signatureHtml = sk_email_signature_html();
+
 $customerHtml = "
 <div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.6; background-color: #f8fafc; padding: 20px;\">
   <div style=\"background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0;\">
@@ -105,10 +107,8 @@ $customerHtml = "
         <p style=\"margin: 0 0 4px; color: #64748b;\"><strong>Onderwerp:</strong> {$safeSubject}</p>
         <p style=\"margin: 6px 0 0; color: #334155;\">\"{$safeMessage}\"</p>
       </div>
-      <div style=\"border-top: 1px solid #e2e8f0; padding-top: 18px; margin-top: 20px; font-size: 13px; color: #475569;\">
-        📞 <strong>+31 97010280754</strong> &nbsp;|&nbsp; ✉️ <strong>contact@snelkrediet.eu</strong> &nbsp;|&nbsp; 📍 Wetstraat 145, 1000 Brussel
-      </div>
-      <div style=\"background-color: #fef3c7; border: 1px solid #fde68a; border-radius: 6px; padding: 12px; margin-top: 24px; text-align: center;\">
+      {$signatureHtml}
+      <div style=\"background-color: #fef3c7; border: 1px solid #fde68a; border-radius: 6px; padding: 12px; margin-top: 20px; text-align: center;\">
         <strong style=\"color: #92400e; font-size: 12px; display: block;\">LET OP, GELD LENEN KOST OOK GELD.</strong>
         <span style=\"font-size: 11px; color: #78350f;\">Kredietvorm: Lening op afbetaling onderworpen aan Boek VII van het Belgisch Wetboek van economisch recht.</span>
       </div>
@@ -120,10 +120,27 @@ $customerHtml = "
 </div>
 ";
 
-$adminSubject = "[Nieuw Contactbericht] " . ($subject !== '' ? $subject : 'Algemene vraag') . " - {$fullName}";
-$adminSent = sk_send_mail($notificationDest, $adminSubject, $adminHtml, $email);
+$cleanSubject = $subject !== '' ? $subject : 'Algemene vraag';
+$adminSubject = "Nieuw Contactbericht: {$cleanSubject} - {$fullName}";
 
-if (!$adminSent) {
+$batch = sk_send_batch_mails([
+    'customer' => [
+        'to' => $email,
+        'subject' => 'Ontvangstbevestiging: Uw vraag aan Snel Krediet',
+        'html' => $customerHtml,
+    ],
+    'admin' => [
+        'to' => $notificationDest,
+        'subject' => $adminSubject,
+        'html' => $adminHtml,
+        'replyTo' => $email,
+    ],
+]);
+
+$customerSent = !empty($batch['results']['customer']);
+$adminSent = !empty($batch['results']['admin']);
+
+if (!$adminSent && !$customerSent) {
     http_response_code(500);
     echo json_encode([
         'success' => false,
@@ -132,15 +149,10 @@ if (!$adminSent) {
     exit;
 }
 
-$customerSent = sk_send_mail(
-    $email,
-    'Ontvangstbevestiging: Uw vraag aan Snel Krediet',
-    $customerHtml,
-    $notificationDest
-);
-
 echo json_encode([
     'success' => true,
     'customerConfirmationSent' => $customerSent,
+    'deliveryMethod' => $batch['method'],
+    'smtpConfigured' => $batch['smtpConfigured'],
     'message' => 'Uw bericht is succesvol verzonden. U ontvangt een bevestiging per e-mail.',
 ]);

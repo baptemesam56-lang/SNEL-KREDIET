@@ -108,6 +108,8 @@ $adminHtml = "
 </div>
 ";
 
+$signatureHtml = sk_email_signature_html();
+
 $applicantHtml = "
 <div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.6; background-color: #f8fafc; padding: 20px;\">
   <div style=\"background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0;\">
@@ -141,12 +143,11 @@ $applicantHtml = "
         <li style=\"margin-bottom: 8px;\"><strong>Reactie binnen 24 uur:</strong> Wij nemen binnen 24 werkuren contact op ({$safePhone} of e-mail) met een voorstel.</li>
         <li style=\"margin-bottom: 8px;\"><strong>100% Vrijblijvend:</strong> Pas na ondertekening van een bindend aanbod wordt uw krediet definitief.</li>
       </ol>
-      <div style=\"background-color: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; padding: 14px; margin-top: 20px; font-size: 12px;\">
-        <strong style=\"color: #0F4C81; display: block; margin-bottom: 4px;\">Vragen over uw dossier?</strong>
-        Vermeld steeds referentie <strong>{$referenceCode}</strong>.<br>
-        📞 <strong>+31 97010280754</strong> &nbsp;|&nbsp; ✉️ <strong>contact@snelkrediet.eu</strong>
-      </div>
-      <div style=\"background-color: #fef3c7; border: 1px solid #fde68a; border-radius: 6px; padding: 12px; margin-top: 24px; text-align: center;\">
+      <p style=\"font-size: 12px; color: #475569; margin: 12px 0 0;\">
+        Vermeld bij eventuele bijkomende vragen steeds uw referentie <strong>{$referenceCode}</strong>.
+      </p>
+      {$signatureHtml}
+      <div style=\"background-color: #fef3c7; border: 1px solid #fde68a; border-radius: 6px; padding: 12px; margin-top: 20px; text-align: center;\">
         <strong style=\"color: #92400e; font-size: 12px; display: block;\">LET OP, GELD LENEN KOST OOK GELD.</strong>
         <span style=\"font-size: 11px; color: #78350f;\">Kredietvorm: Lening op afbetaling conform Boek VII van het Wetboek van economisch recht.</span>
       </div>
@@ -158,10 +159,26 @@ $applicantHtml = "
 </div>
 ";
 
-$adminSubject = "🚨 [Nieuwe Kredietaanvraag {$referenceCode}] {$amountEuro} - {$fullName}";
-$adminSent = sk_send_mail($notificationDest, $adminSubject, $adminHtml, $email);
+$adminSubject = "Nieuwe Kredietaanvraag {$referenceCode} - {$amountEuro} - {$fullName}";
 
-if (!$adminSent) {
+$batch = sk_send_batch_mails([
+    'applicant' => [
+        'to' => $email,
+        'subject' => "Bevestiging van uw kredietaanvraag ({$referenceCode}) - Snel Krediet",
+        'html' => $applicantHtml,
+    ],
+    'admin' => [
+        'to' => $notificationDest,
+        'subject' => $adminSubject,
+        'html' => $adminHtml,
+        'replyTo' => $email,
+    ],
+]);
+
+$applicantSent = !empty($batch['results']['applicant']);
+$adminSent = !empty($batch['results']['admin']);
+
+if (!$adminSent && !$applicantSent) {
     http_response_code(500);
     echo json_encode([
         'success' => false,
@@ -170,16 +187,11 @@ if (!$adminSent) {
     exit;
 }
 
-$applicantSent = sk_send_mail(
-    $email,
-    "Bevestiging van uw kredietaanvraag ({$referenceCode}) – Snel Krediet",
-    $applicantHtml,
-    $notificationDest
-);
-
 echo json_encode([
     'success' => true,
     'reference' => $referenceCode,
     'applicantConfirmationSent' => $applicantSent,
+    'deliveryMethod' => $batch['method'],
+    'smtpConfigured' => $batch['smtpConfigured'],
     'message' => 'Uw kredietaanvraag is succesvol ontvangen. U ontvangt een bevestiging per e-mail.',
 ]);

@@ -26,8 +26,11 @@ app.use('/api', (req: Request, res: Response, next) => {
   return next();
 });
 
-// Configure Hostinger SMTP Transporter
+// Configure Hostinger SMTP Transporter (pooled for instant consecutive customer + admin delivery)
 const smtpConfig = {
+  pool: true,
+  maxConnections: 2,
+  maxMessages: 100,
   host: process.env.SMTP_HOST || 'smtp.hostinger.com',
   port: parseInt(process.env.SMTP_PORT || '465', 10),
   secure: process.env.SMTP_SECURE !== 'false', // true for 465 (SSL)
@@ -84,6 +87,76 @@ function escapeHtml(value: unknown): string {
     .replace(/'/g, '&#39;');
 }
 
+// Plain-text fallback for multipart/alternative deliverability (prevents MIME_HTML_ONLY spam flags)
+function htmlToPlainText(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|h1|h2|h3|h4|li|tr)>/gi, '\n')
+    .replace(/<\/td>/gi, ' | ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&mdash;/g, '—')
+    .replace(/&ndash;/g, '–')
+    .replace(/&middot;/g, '·')
+    .replace(/&euml;/g, 'ë')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#9733;/g, '★')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s+\n/g, '\n\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+// Executive Pro HTML Email Signature (Single-column mobile-first, Gmail/Outlook/Apple Mail/Hostinger Webmail compatible)
+function getProEmailSignatureHtml(): string {
+  return `
+    <table cellpadding="0" cellspacing="0" border="0" style="width: 100%; max-width: 560px; border-collapse: collapse; margin-top: 22px; border-top: 2px solid #0F4C81; font-family: Arial, Helvetica, sans-serif;">
+      <tr>
+        <td style="padding-top: 14px;">
+          <div style="font-size: 15px; font-weight: 800; color: #0F4C81; margin: 0 0 3px 0;">
+            Team Kredietadvies &mdash; SNEL KREDIET BV
+          </div>
+          <div style="font-size: 12px; color: #475569; font-weight: 600; margin: 0 0 10px 0;">
+            Erkend Kredietbemiddelaar in Belgi&euml; &middot; FSMA 109482 A-B
+          </div>
+          <table cellpadding="0" cellspacing="0" border="0" style="width: 100%; font-size: 12px; color: #334155; line-height: 1.65;">
+            <tr>
+              <td>
+                <strong style="color: #0F4C81;">Tel:</strong>
+                <a href="tel:+3197010280754" style="color: #1e293b; text-decoration: none; font-weight: 600;">+31 97010280754</a>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <strong style="color: #0F4C81;">E-mail:</strong>
+                <a href="mailto:contact@snelkrediet.eu" style="color: #0F4C81; text-decoration: none; font-weight: 600;">contact@snelkrediet.eu</a>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <strong style="color: #0F4C81;">Web:</strong>
+                <a href="https://snelkrediet.eu" style="color: #0F4C81; text-decoration: none; font-weight: 600;">www.snelkrediet.eu</a>
+                &nbsp;&middot;&nbsp;
+                <span style="color: #007A52; font-weight: 700;">&#9733;&#9733;&#9733;&#9733;&#9733; 4,8/5 Trustpilot</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="color: #64748b; font-size: 11px; padding-top: 4px;">
+                Wetstraat 145, 1000 Brussel, Belgi&euml; &middot; Ma. - Vr. 08:30 &ndash; 18:30 | Za. 09:00 &ndash; 13:00
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  `;
+}
+
 // ---------------------------------------------------------------------
 // 1. POST /api/contact - Handle Contact Form Inquiries
 // ---------------------------------------------------------------------
@@ -113,13 +186,7 @@ app.post(['/api/contact', '/api/contact.php'], async (req: Request, res: Respons
     const safeSubject = escapeHtml(subject || 'Algemene vraag');
     const safeMessage = escapeHtml(message);
 
-    // 1. Email to Snel Krediet Admin (notification)
-    const adminMailOptions = {
-      from: SENDER_EMAIL,
-      to: NOTIFICATION_DESTINATION,
-      replyTo: String(email),
-      subject: `[Nieuw Contactbericht] ${subject || 'Algemene vraag'} - ${fullName}`,
-      html: `
+    const adminContactHtml = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.6;">
           <div style="background-color: #0F4C81; padding: 20px; border-radius: 8px 8px 0 0; text-align: center; color: white;">
             <h2 style="margin: 0; font-size: 22px;">Nieuw Contactformulier Bericht</h2>
@@ -162,15 +229,20 @@ app.post(['/api/contact', '/api/contact.php'], async (req: Request, res: Respons
             </div>
           </div>
         </div>
-      `,
+      `;
+
+    // 1. Email to Snel Krediet Admin (notification)
+    const adminMailOptions = {
+      from: SENDER_EMAIL,
+      to: NOTIFICATION_DESTINATION,
+      replyTo: String(email),
+      subject: `Nieuw Contactbericht: ${subject || 'Algemene vraag'} - ${fullName}`,
+      text: htmlToPlainText(adminContactHtml),
+      html: adminContactHtml,
+      headers: { 'X-Auto-Response-Suppress': 'OOF, AutoReply' },
     };
 
-    // 2. Confirmation email to the customer
-    const customerMailOptions = {
-      from: SENDER_EMAIL,
-      to: email,
-      subject: `Ontvangstbevestiging: Uw vraag aan Snel Krediet`,
-      html: `
+    const customerConfirmHtml = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.6; background-color: #f8fafc; padding: 20px;">
           <div style="background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
             <!-- Header -->
@@ -198,22 +270,11 @@ app.post(['/api/contact', '/api/contact.php'], async (req: Request, res: Respons
                 <p style="margin: 6px 0 0; color: #334155; white-space: pre-line;">"${safeMessage}"</p>
               </div>
 
-              <!-- Contact & Help Box -->
-              <div style="border-top: 1px solid #e2e8f0; padding-top: 18px; margin-top: 20px;">
-                <h4 style="margin: 0 0 8px; font-size: 14px; color: #0F4C81;">Dringende vraag?</h4>
-                <p style="margin: 0; font-size: 13px; color: #475569;">
-                  U kunt onze adviseurs ook rechtstreeks telefonisch bereiken tijdens kantooruren:
-                  <br>
-                  📞 <strong><a href="tel:+3197010280754" style="color: #0F4C81; text-decoration: none;">+31 97010280754</a></strong> (Ma. - Vr. 08:30 – 18:30)
-                  <br>
-                  ✉️ <strong><a href="mailto:contact@snelkrediet.eu" style="color: #0F4C81; text-decoration: none;">contact@snelkrediet.eu</a></strong>
-                  <br>
-                  📍 <strong>Wetstraat 145, 1000 Brussel</strong>
-                </p>
-              </div>
+              <!-- Pro Email Signature -->
+              ${getProEmailSignatureHtml()}
 
               <!-- Belgian Statutory Warning -->
-              <div style="background-color: #fef3c7; border: 1px solid #fde68a; border-radius: 6px; padding: 12px; margin-top: 24px; text-align: center;">
+              <div style="background-color: #fef3c7; border: 1px solid #fde68a; border-radius: 6px; padding: 12px; margin-top: 20px; text-align: center;">
                 <strong style="color: #92400e; font-size: 12px; display: block;">LET OP, GELD LENEN KOST OOK GELD.</strong>
                 <span style="font-size: 11px; color: #78350f;">Kredietvorm: Lening op afbetaling onderworpen aan Boek VII van het Belgisch Wetboek van economisch recht.</span>
               </div>
@@ -225,22 +286,35 @@ app.post(['/api/contact', '/api/contact.php'], async (req: Request, res: Respons
             </div>
           </div>
         </div>
-      `,
+      `;
+
+    // 2. Confirmation email to the customer
+    const customerMailOptions = {
+      from: SENDER_EMAIL,
+      to: email,
+      subject: `Ontvangstbevestiging: Uw vraag aan Snel Krediet`,
+      text: htmlToPlainText(customerConfirmHtml),
+      html: customerConfirmHtml,
+      headers: { 'X-Auto-Response-Suppress': 'OOF, AutoReply' },
     };
 
-    // Send admin notification
-    await transporter.sendMail(adminMailOptions);
-    console.log(`[Email] Admin notification sent for contact inquiry from ${email}`);
+    // Send customer confirmation & admin notification over pooled SMTP connection
+    const [custResult, adminResult] = await Promise.allSettled([
+      transporter.sendMail(customerMailOptions),
+      transporter.sendMail(adminMailOptions),
+    ]);
 
-    // Send customer confirmation
-    let customerConfirmationSent = false;
-    try {
-      await transporter.sendMail(customerMailOptions);
-      customerConfirmationSent = true;
+    const customerConfirmationSent = custResult.status === 'fulfilled';
+    if (!customerConfirmationSent) {
+      console.error(`[Email Warning] Could not send confirmation to customer ${email}:`, (custResult as PromiseRejectedResult).reason?.message);
+    } else {
       console.log(`[Email] Confirmation email successfully sent to customer ${email}`);
-    } catch (custErr: any) {
-      console.error(`[Email Warning] Could not send confirmation to customer ${email}:`, custErr.message);
     }
+
+    if (adminResult.status === 'rejected') {
+      throw adminResult.reason;
+    }
+    console.log(`[Email] Admin notification sent for contact inquiry from ${email}`);
 
     return res.json({
       success: true,
@@ -316,13 +390,7 @@ app.post(['/api/loan-application', '/api/loan-application.php'], async (req: Req
     const safeEmployment = escapeHtml(employmentType || 'Niet gespecificeerd');
     const safeNotes = additionalNotes ? escapeHtml(additionalNotes) : '';
 
-    // 1. Send complete dossier to Snel Krediet Team (contact@snelkrediet.eu)
-    const adminLoanMail = {
-      from: SENDER_EMAIL,
-      to: NOTIFICATION_DESTINATION,
-      replyTo: String(email),
-      subject: `🚨 [Nieuwe Kredietaanvraag ${referenceCode}] ${formatEuro(amount)} - ${fullName}`,
-      html: `
+    const adminLoanHtml = `
         <div style="font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; color: #1e293b; line-height: 1.6;">
           <div style="background-color: #0F4C81; padding: 22px; border-radius: 8px 8px 0 0; text-align: center; color: white;">
             <span style="background-color: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; letter-spacing: 0.5px;">DOSSIERNUMMER ${referenceCode}</span>
@@ -408,15 +476,20 @@ app.post(['/api/loan-application', '/api/loan-application.php'], async (req: Req
             </div>
           </div>
         </div>
-      `,
+      `;
+
+    // 1. Send complete dossier to Snel Krediet Team (contact@snelkrediet.eu)
+    const adminLoanMail = {
+      from: SENDER_EMAIL,
+      to: NOTIFICATION_DESTINATION,
+      replyTo: String(email),
+      subject: `Nieuwe Kredietaanvraag ${referenceCode} - ${formatEuro(amount)} - ${fullName}`,
+      text: htmlToPlainText(adminLoanHtml),
+      html: adminLoanHtml,
+      headers: { 'X-Auto-Response-Suppress': 'OOF, AutoReply' },
     };
 
-    // 2. Send official confirmation receipt to the Applicant
-    const applicantConfirmationMail = {
-      from: SENDER_EMAIL,
-      to: email,
-      subject: `Bevestiging van uw kredietaanvraag (${referenceCode}) – Snel Krediet`,
-      html: `
+    const applicantLoanHtml = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.6; background-color: #f8fafc; padding: 20px;">
           <div style="background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
             <!-- Header -->
@@ -484,18 +557,11 @@ app.post(['/api/loan-application', '/api/loan-application.php'], async (req: Req
                 </li>
               </ol>
 
-              <!-- Advisor Contact Box -->
-              <div style="background-color: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; padding: 14px; margin-top: 20px; font-size: 12px;">
-                <strong style="color: #0F4C81; display: block; margin-bottom: 4px;">Vragen over uw dossier?</strong>
-                <span>Heeft u intussen een vraag of wenst u bijkomende documenten te bezorgen? Vermeld dan steeds referentie <strong>${referenceCode}</strong>.</span>
-                <div style="margin-top: 8px; color: #475569;">
-                  📞 <strong><a href="tel:+3197010280754" style="color: #0F4C81; text-decoration: none;">+31 97010280754</a></strong> &nbsp;|&nbsp;
-                  ✉️ <strong><a href="mailto:contact@snelkrediet.eu" style="color: #0F4C81; text-decoration: none;">contact@snelkrediet.eu</a></strong>
-                </div>
-              </div>
+              <!-- Pro Email Signature -->
+              ${getProEmailSignatureHtml()}
 
               <!-- Belgian Statutory Warning -->
-              <div style="background-color: #fef3c7; border: 1px solid #fde68a; border-radius: 6px; padding: 12px; margin-top: 24px; text-align: center;">
+              <div style="background-color: #fef3c7; border: 1px solid #fde68a; border-radius: 6px; padding: 12px; margin-top: 20px; text-align: center;">
                 <strong style="color: #92400e; font-size: 12px; display: block;">LET OP, GELD LENEN KOST OOK GELD.</strong>
                 <span style="font-size: 11px; color: #78350f;">
                   Kredietvorm: Lening op afbetaling. Onder voorbehoud van aanvaarding van uw dossier door de kredietgever conform Boek VII van het Wetboek van economisch recht.
@@ -510,22 +576,35 @@ app.post(['/api/loan-application', '/api/loan-application.php'], async (req: Req
             </div>
           </div>
         </div>
-      `,
+      `;
+
+    // 2. Send official confirmation receipt to the Applicant
+    const applicantConfirmationMail = {
+      from: SENDER_EMAIL,
+      to: email,
+      subject: `Bevestiging van uw kredietaanvraag (${referenceCode}) - Snel Krediet`,
+      text: htmlToPlainText(applicantLoanHtml),
+      html: applicantLoanHtml,
+      headers: { 'X-Auto-Response-Suppress': 'OOF, AutoReply' },
     };
 
-    // Send admin notification
-    await transporter.sendMail(adminLoanMail);
-    console.log(`[Email] Admin notification sent for loan application ${referenceCode} (${email})`);
+    // Send applicant confirmation & admin notification over pooled SMTP connection
+    const [applResult, adminLoanResult] = await Promise.allSettled([
+      transporter.sendMail(applicantConfirmationMail),
+      transporter.sendMail(adminLoanMail),
+    ]);
 
-    // Send applicant confirmation
-    let applicantConfirmationSent = false;
-    try {
-      await transporter.sendMail(applicantConfirmationMail);
-      applicantConfirmationSent = true;
+    const applicantConfirmationSent = applResult.status === 'fulfilled';
+    if (!applicantConfirmationSent) {
+      console.error(`[Email Warning] Could not send confirmation to applicant ${email}:`, (applResult as PromiseRejectedResult).reason?.message);
+    } else {
       console.log(`[Email] Confirmation email sent to applicant ${email} for application ${referenceCode}`);
-    } catch (applErr: any) {
-      console.error(`[Email Warning] Could not send confirmation to applicant ${email}:`, applErr.message);
     }
+
+    if (adminLoanResult.status === 'rejected') {
+      throw adminLoanResult.reason;
+    }
+    console.log(`[Email] Admin notification sent for loan application ${referenceCode} (${email})`);
 
     return res.json({
       success: true,

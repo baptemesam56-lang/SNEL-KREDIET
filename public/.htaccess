@@ -1,10 +1,23 @@
+<FilesMatch "^(\.env.*|\.smtp.*|smtp-config\.php|_mailer\.php)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
 
-  # Block direct web access to internal mailer helper or env files
-  RewriteRule ^api/_mailer\.php$ - [F,L]
+  # Block direct web access to internal mailer helper or env/smtp config files
+  RewriteRule ^api/(_mailer|smtp-config)\.php$ - [F,L]
+  RewriteRule ^api/\. - [F,L]
   RewriteRule ^\.env - [F,L]
+  RewriteRule ^\.smtp - [F,L]
+  RewriteRule ^smtp-config\.php$ - [F,L]
 
   # Route clean /api/* endpoints to PHP handlers on Hostinger / Apache
   RewriteRule ^api/contact/?$ /api/contact.php [L,QSA]
