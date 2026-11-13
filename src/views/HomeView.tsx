@@ -7,6 +7,11 @@ import { HeroLoanWidget } from '../components/HeroLoanWidget';
 import { Testimonials } from '../components/Testimonials';
 import { ClientStories } from '../components/ClientStories';
 import { ContactForm } from '../components/ContactForm';
+import advisoryTeamImg from '../assets/images/belgian_finance_advisory_team_1794258355459.jpg';
+import personalLoanImg from '../assets/images/personal_loan_lifestyle_1794428025687.jpg';
+import electricCarImg from '../assets/images/modern_electric_car_loan_1794258355966.jpg';
+import renovationLoanImg from '../assets/images/family_home_renovation_loan_1794258355533.jpg';
+import consolidationImg from '../assets/images/loan_consolidation_meeting_1794428041079.jpg';
 import {
   ShieldCheck,
   Clock,
@@ -251,7 +256,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
               <div className="bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-xl p-3 shadow-sm flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2.5">
                   <img
-                    src="/src/assets/images/belgian_finance_advisory_team_1794258355459.jpg"
+                    src={advisoryTeamImg}
                     alt="Financieel adviseurs Brussel"
                     className="w-10 h-10 rounded-lg object-cover border border-slate-200"
                     referrerPolicy="no-referrer"
@@ -366,7 +371,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
               onClick={() =>
                 setActiveImageModal({
                   title: 'Persoonlijke Lening',
-                  image: '/src/assets/images/personal_loan_lifestyle_1794428025687.jpg',
+                  image: personalLoanImg,
                   badge: '100% Vrij te besteden',
                   purpose: 'persoonlijk',
                   description:
@@ -382,7 +387,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
               title="Klik om foto en details te vergroten"
             >
               <img
-                src="/src/assets/images/personal_loan_lifestyle_1794428025687.jpg"
+                src={personalLoanImg}
                 alt="Persoonlijke Lening in België"
                 className="w-full h-full object-cover object-center transform transition-transform duration-700 ease-out group-hover/img:scale-110"
                 referrerPolicy="no-referrer"
@@ -430,7 +435,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
               onClick={() =>
                 setActiveImageModal({
                   title: 'Autolening & Mobiliteit',
-                  image: '/src/assets/images/modern_electric_car_loan_1794258355966.jpg',
+                  image: electricCarImg,
                   badge: 'Gunstig mobiliteitstarief',
                   purpose: 'auto',
                   description:
@@ -446,7 +451,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
               title="Klik om foto en details te vergroten"
             >
               <img
-                src="/src/assets/images/modern_electric_car_loan_1794258355966.jpg"
+                src={electricCarImg}
                 alt="Autolening in België"
                 className="w-full h-full object-cover object-center transform transition-transform duration-700 ease-out group-hover/img:scale-110"
                 referrerPolicy="no-referrer"
@@ -494,7 +499,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
               onClick={() =>
                 setActiveImageModal({
                   title: 'Renovatielening & Energie',
-                  image: '/src/assets/images/family_home_renovation_loan_1794258355533.jpg',
+                  image: renovationLoanImg,
                   badge: 'Groen tarief',
                   purpose: 'verbouwing',
                   description:
@@ -510,7 +515,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
               title="Klik om foto en details te vergroten"
             >
               <img
-                src="/src/assets/images/family_home_renovation_loan_1794258355533.jpg"
+                src={renovationLoanImg}
                 alt="Renovatielening België"
                 className="w-full h-full object-cover object-center transform transition-transform duration-700 ease-out group-hover/img:scale-110"
                 referrerPolicy="no-referrer"
@@ -558,7 +563,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
               onClick={() =>
                 setActiveImageModal({
                   title: 'Hergroepering van Kredieten',
-                  image: '/src/assets/images/loan_consolidation_meeting_1794428041079.jpg',
+                  image: consolidationImg,
                   badge: 'Eén overzichtelijke lening',
                   purpose: 'hergroepering',
                   description:
@@ -574,7 +579,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
               title="Klik om foto en details te vergroten"
             >
               <img
-                src="/src/assets/images/loan_consolidation_meeting_1794428041079.jpg"
+                src={consolidationImg}
                 alt="Hergroepering Kredieten België"
                 className="w-full h-full object-cover object-center transform transition-transform duration-700 ease-out group-hover/img:scale-110"
                 referrerPolicy="no-referrer"

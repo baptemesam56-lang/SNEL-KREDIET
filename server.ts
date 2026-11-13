@@ -1,7 +1,8 @@
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 dotenv.config();
@@ -476,7 +477,18 @@ app.post('/api/loan-application', async (req: Request, res: Response) => {
 // 3. Vite Middleware (Dev) or Static Files (Prod)
 // ---------------------------------------------------------------------
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
+  const distPath = path.resolve(__dirname, 'dist');
+  const distIndex = path.resolve(distPath, 'index.html');
+  const isProdMode =
+    process.env.NODE_ENV === 'production' ||
+    process.env.npm_lifecycle_event === 'start';
+
+  if (isProdMode && fs.existsSync(distIndex)) {
+    app.use(express.static(distPath));
+    app.get('*', (_req: Request, res: Response) => {
+      res.sendFile(distIndex);
+    });
+  } else {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: {
@@ -487,12 +499,6 @@ async function startServer() {
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else {
-    const distPath = path.resolve(__dirname, 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req: Request, res: Response) => {
-      res.sendFile(path.resolve(distPath, 'index.html'));
-    });
   }
 
   app.listen(PORT, '0.0.0.0', () => {

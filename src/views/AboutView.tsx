@@ -2,6 +2,7 @@ import React from 'react';
 import { PageId } from '../types';
 import { COMPANY_INFO, ADVISORY_TEAM } from '../data/content';
 import { Testimonials } from '../components/Testimonials';
+import advisoryTeamImg from '../assets/images/belgian_finance_advisory_team_1794258355459.jpg';
 import { ShieldCheck, Users, Award, Scale, CheckCircle2, ArrowRight, MapPin, Sparkles } from 'lucide-react';
 
 interface AboutViewProps {
@@ -69,7 +70,7 @@ export const AboutView: React.FC<AboutViewProps> = ({
           <div className="group relative rounded-2xl overflow-hidden shadow-xl border border-slate-200">
             <div className="h-80 overflow-hidden relative">
               <img
-                src="/src/assets/images/belgian_finance_advisory_team_1794258355459.jpg"
+                src={advisoryTeamImg}
                 alt="Adviseursteam Snel Krediet Brussel"
                 className="w-full h-full object-cover object-center transform transition-transform duration-700 ease-out group-hover:scale-108"
                 referrerPolicy="no-referrer"
