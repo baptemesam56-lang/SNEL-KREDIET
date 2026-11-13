@@ -15,6 +15,17 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 
 app.use(express.json());
 
+// Allow cross-origin requests cleanly for /api routes (e.g., if frontend & backend are separated)
+app.use('/api', (req: Request, res: Response, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  return next();
+});
+
 // Configure Hostinger SMTP Transporter
 const smtpConfig = {
   host: process.env.SMTP_HOST || 'smtp.hostinger.com',
@@ -53,6 +64,71 @@ app.get('/api/health', (req: Request, res: Response) => {
   });
 });
 
+// Visitor Country Auto-Detection Endpoint
+app.get('/api/geo', async (req: Request, res: Response) => {
+  try {
+    // 1. Check standard CDN / Cloud / Reverse-proxy country headers
+    const headerCandidates = [
+      req.headers['cf-ipcountry'],
+      req.headers['x-appengine-country'],
+      req.headers['x-vercel-ip-country'],
+      req.headers['x-country-code'],
+    ];
+
+    for (const candidate of headerCandidates) {
+      const val = Array.isArray(candidate) ? candidate[0] : candidate;
+      if (val && typeof val === 'string') {
+        const clean = val.trim().toUpperCase();
+        if (clean.length === 2 && clean !== 'XX' && clean !== 'T1' && clean !== 'ZZ') {
+          return res.json({ countryCode: clean, source: 'proxy-header' });
+        }
+      }
+    }
+
+    // 2. Inspect visitor public IP (if forwarded behind reverse proxy)
+    const forwardedFor = req.headers['x-forwarded-for'];
+    const rawIp =
+      (Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor?.split(',')[0]) ||
+      req.socket?.remoteAddress ||
+      '';
+    const cleanIp = rawIp.trim().replace(/^::ffff:/, '');
+
+    const isPrivateIp =
+      !cleanIp ||
+      cleanIp === '::1' ||
+      cleanIp.startsWith('127.') ||
+      cleanIp.startsWith('10.') ||
+      cleanIp.startsWith('192.168.') ||
+      /^172\.(1[6-9]|2\d|3[0-1])\./.test(cleanIp);
+
+    if (!isPrivateIp) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 2000);
+      try {
+        const geoRes = await fetch(`https://ipwho.is/${encodeURIComponent(cleanIp)}`, {
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        if (geoRes.ok) {
+          const geoData = (await geoRes.json()) as { success?: boolean; country_code?: string };
+          if (geoData?.success && geoData.country_code) {
+            return res.json({
+              countryCode: geoData.country_code.toUpperCase(),
+              source: 'ip-lookup',
+            });
+          }
+        }
+      } catch {
+        clearTimeout(timeout);
+      }
+    }
+
+    return res.json({ countryCode: 'XX', source: 'default' });
+  } catch {
+    return res.json({ countryCode: 'XX', source: 'default' });
+  }
+});
+
 // Helper for currency formatting in emails
 function formatEuro(num: number): string {
   return new Intl.NumberFormat('nl-BE', {
@@ -63,12 +139,22 @@ function formatEuro(num: number): string {
   }).format(num);
 }
 
+// Helper to safely escape user input inside HTML email templates
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // ---------------------------------------------------------------------
 // 1. POST /api/contact - Handle Contact Form Inquiries
 // ---------------------------------------------------------------------
 app.post('/api/contact', async (req: Request, res: Response) => {
   try {
-    const { fullName, email, phone, subject, message } = req.body;
+    const { fullName, email, phone, country, countryCode, subject, message } = req.body;
 
     if (!fullName || !email || !message) {
       return res.status(400).json({
@@ -83,11 +169,20 @@ app.post('/api/contact', async (req: Request, res: Response) => {
       timeStyle: 'short',
     });
 
+    const safeName = escapeHtml(fullName);
+    const safeEmail = escapeHtml(email);
+    const safePhone = escapeHtml(phone || 'Niet opgegeven');
+    const safeCountry = escapeHtml(
+      country ? `${country}${countryCode ? ` (${String(countryCode).toUpperCase()})` : ''}` : 'België / Belgique (BE)'
+    );
+    const safeSubject = escapeHtml(subject || 'Algemene vraag');
+    const safeMessage = escapeHtml(message);
+
     // 1. Email to Snel Krediet Admin (notification)
     const adminMailOptions = {
       from: SENDER_EMAIL,
       to: NOTIFICATION_DESTINATION,
-      replyTo: email,
+      replyTo: String(email),
       subject: `[Nieuw Contactbericht] ${subject || 'Algemene vraag'} - ${fullName}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.6;">
@@ -100,30 +195,34 @@ app.post('/api/contact', async (req: Request, res: Response) => {
             <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
               <tr>
                 <td style="padding: 8px 0; border-bottom: 1px solid #f1f5f9; color: #64748b; width: 140px;"><strong>Naam:</strong></td>
-                <td style="padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-weight: bold; color: #0F4C81;">${fullName}</td>
+                <td style="padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-weight: bold; color: #0F4C81;">${safeName}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; border-bottom: 1px solid #f1f5f9; color: #64748b;"><strong>Land:</strong></td>
+                <td style="padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-weight: 600;">${safeCountry}</td>
               </tr>
               <tr>
                 <td style="padding: 8px 0; border-bottom: 1px solid #f1f5f9; color: #64748b;"><strong>E-mailadres:</strong></td>
-                <td style="padding: 8px 0; border-bottom: 1px solid #f1f5f9;"><a href="mailto:${email}" style="color: #0F4C81; text-decoration: none;">${email}</a></td>
+                <td style="padding: 8px 0; border-bottom: 1px solid #f1f5f9;"><a href="mailto:${safeEmail}" style="color: #0F4C81; text-decoration: none;">${safeEmail}</a></td>
               </tr>
               <tr>
                 <td style="padding: 8px 0; border-bottom: 1px solid #f1f5f9; color: #64748b;"><strong>Telefoon:</strong></td>
-                <td style="padding: 8px 0; border-bottom: 1px solid #f1f5f9;">${phone || 'Niet opgegeven'}</td>
+                <td style="padding: 8px 0; border-bottom: 1px solid #f1f5f9;">${safePhone}</td>
               </tr>
               <tr>
                 <td style="padding: 8px 0; border-bottom: 1px solid #f1f5f9; color: #64748b;"><strong>Onderwerp:</strong></td>
-                <td style="padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-weight: 600;">${subject}</td>
+                <td style="padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-weight: 600;">${safeSubject}</td>
               </tr>
             </table>
 
             <div style="background-color: #f8fafc; border-left: 4px solid #0F4C81; padding: 15px; border-radius: 4px; margin: 20px 0;">
               <h4 style="margin: 0 0 8px; color: #0F4C81; font-size: 14px;">Bericht van bezoeker:</h4>
-              <p style="margin: 0; white-space: pre-line; font-size: 14px; color: #334155;">${message}</p>
+              <p style="margin: 0; white-space: pre-line; font-size: 14px; color: #334155;">${safeMessage}</p>
             </div>
 
             <div style="text-align: center; margin-top: 25px;">
-              <a href="mailto:${email}?subject=Re:%20${encodeURIComponent(subject)}" style="background-color: #0F4C81; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: bold; display: inline-block;">
-                Direct beantwoorden aan ${fullName}
+              <a href="mailto:${safeEmail}?subject=Re:%20${encodeURIComponent(String(subject || 'Algemene vraag'))}" style="background-color: #0F4C81; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: bold; display: inline-block;">
+                Direct beantwoorden aan ${safeName}
               </a>
             </div>
           </div>
@@ -147,9 +246,9 @@ app.post('/api/contact', async (req: Request, res: Response) => {
 
             <!-- Body -->
             <div style="padding: 24px 28px;">
-              <h2 style="color: #0F4C81; font-size: 18px; margin-top: 0;">Beste ${fullName},</h2>
+              <h2 style="color: #0F4C81; font-size: 18px; margin-top: 0;">Beste ${safeName},</h2>
               <p style="font-size: 14px; color: #334155;">
-                Wij hebben uw bericht met betrekking tot <strong>"${subject}"</strong> goed ontvangen via onze website.
+                Wij hebben uw bericht met betrekking tot <strong>"${safeSubject}"</strong> goed ontvangen via onze website.
               </p>
               <p style="font-size: 14px; color: #334155;">
                 Onze kredietdeskundigen in Brussel bekijken uw vraag zo snel mogelijk. U ontvangt uiterlijk binnen <strong>24 werkuren</strong> een persoonlijk en deskundig antwoord per e-mail of telefoon.
@@ -158,8 +257,10 @@ app.post('/api/contact', async (req: Request, res: Response) => {
               <!-- Summary Card -->
               <div style="background-color: #f1f5f9; border-radius: 8px; padding: 16px; margin: 20px 0; font-size: 13px;">
                 <p style="margin: 0 0 6px; font-weight: bold; color: #0F4C81;">Overzicht van uw ingezonden vraag:</p>
-                <p style="margin: 0 0 4px; color: #64748b;"><strong>Onderwerp:</strong> ${subject}</p>
-                <p style="margin: 0; color: #334155; white-space: pre-line;">"${message}"</p>
+                <p style="margin: 0 0 4px; color: #64748b;"><strong>Land:</strong> ${safeCountry}</p>
+                ${phone ? `<p style="margin: 0 0 4px; color: #64748b;"><strong>Telefoon:</strong> ${safePhone}</p>` : ''}
+                <p style="margin: 0 0 4px; color: #64748b;"><strong>Onderwerp:</strong> ${safeSubject}</p>
+                <p style="margin: 6px 0 0; color: #334155; white-space: pre-line;">"${safeMessage}"</p>
               </div>
 
               <!-- Contact & Help Box -->
@@ -197,8 +298,10 @@ app.post('/api/contact', async (req: Request, res: Response) => {
     console.log(`[Email] Admin notification sent for contact inquiry from ${email}`);
 
     // Send customer confirmation
+    let customerConfirmationSent = false;
     try {
       await transporter.sendMail(customerMailOptions);
+      customerConfirmationSent = true;
       console.log(`[Email] Confirmation email successfully sent to customer ${email}`);
     } catch (custErr: any) {
       console.error(`[Email Warning] Could not send confirmation to customer ${email}:`, custErr.message);
@@ -206,6 +309,7 @@ app.post('/api/contact', async (req: Request, res: Response) => {
 
     return res.json({
       success: true,
+      customerConfirmationSent,
       message: 'Uw bericht is succesvol verzonden. U ontvangt een bevestiging per e-mail.',
     });
   } catch (error: any) {
@@ -233,6 +337,8 @@ app.post('/api/loan-application', async (req: Request, res: Response) => {
       fullName,
       email,
       phone,
+      country,
+      countryCode,
       monthlyIncome,
       housingStatus,
       employmentType,
@@ -246,7 +352,11 @@ app.post('/api/loan-application', async (req: Request, res: Response) => {
       });
     }
 
-    const referenceCode = `SK-BE-${Math.floor(100000 + Math.random() * 900000)}`;
+    const cleanCountryCode =
+      typeof countryCode === 'string' && /^[A-Za-z]{2}$/.test(countryCode.trim())
+        ? countryCode.trim().toUpperCase()
+        : 'BE';
+    const referenceCode = `SK-${cleanCountryCode}-${Math.floor(100000 + Math.random() * 900000)}`;
     const submissionDate = new Date().toLocaleString('nl-BE', {
       timeZone: 'Europe/Brussels',
       dateStyle: 'full',
@@ -261,12 +371,21 @@ app.post('/api/loan-application', async (req: Request, res: Response) => {
     };
 
     const purposeTitle = purposeLabels[purpose] || 'Consumentenkrediet';
+    const safeName = escapeHtml(fullName);
+    const safeEmail = escapeHtml(email);
+    const safePhone = escapeHtml(phone);
+    const safeCountry = escapeHtml(
+      country ? `${country} (${cleanCountryCode})` : `België / Belgique (${cleanCountryCode})`
+    );
+    const safeHousing = escapeHtml(housingStatus || 'Niet gespecificeerd');
+    const safeEmployment = escapeHtml(employmentType || 'Niet gespecificeerd');
+    const safeNotes = additionalNotes ? escapeHtml(additionalNotes) : '';
 
     // 1. Send complete dossier to Snel Krediet Team (contact@snelkrediet.eu)
     const adminLoanMail = {
       from: SENDER_EMAIL,
       to: NOTIFICATION_DESTINATION,
-      replyTo: email,
+      replyTo: String(email),
       subject: `🚨 [Nieuwe Kredietaanvraag ${referenceCode}] ${formatEuro(amount)} - ${fullName}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; color: #1e293b; line-height: 1.6;">
@@ -313,15 +432,19 @@ app.post('/api/loan-application', async (req: Request, res: Response) => {
             <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
               <tr>
                 <td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9; color: #64748b; width: 160px;"><strong>Volledige Naam:</strong></td>
-                <td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9; font-weight: bold;">${fullName}</td>
+                <td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9; font-weight: bold;">${safeName}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9; color: #64748b;"><strong>Land van verblijf:</strong></td>
+                <td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9; font-weight: bold; color: #0F4C81;">${safeCountry}</td>
               </tr>
               <tr>
                 <td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9; color: #64748b;"><strong>E-mailadres:</strong></td>
-                <td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9;"><a href="mailto:${email}" style="color: #0F4C81;">${email}</a></td>
+                <td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9;"><a href="mailto:${safeEmail}" style="color: #0F4C81;">${safeEmail}</a></td>
               </tr>
               <tr>
                 <td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9; color: #64748b;"><strong>Telefoonnummer:</strong></td>
-                <td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9; font-weight: bold;"><a href="tel:${phone}">${phone}</a></td>
+                <td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9; font-weight: bold;"><a href="tel:${safePhone}">${safePhone}</a></td>
               </tr>
               <tr>
                 <td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9; color: #64748b;"><strong>Netto Maandinkomen:</strong></td>
@@ -329,23 +452,23 @@ app.post('/api/loan-application', async (req: Request, res: Response) => {
               </tr>
               <tr>
                 <td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9; color: #64748b;"><strong>Woonsituatie:</strong></td>
-                <td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9;">${housingStatus || 'Niet gespecificeerd'}</td>
+                <td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9;">${safeHousing}</td>
               </tr>
               <tr>
                 <td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9; color: #64748b;"><strong>Beroepssituatie:</strong></td>
-                <td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9;">${employmentType || 'Niet gespecificeerd'}</td>
+                <td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9;">${safeEmployment}</td>
               </tr>
-              ${additionalNotes ? `
+              ${safeNotes ? `
               <tr>
                 <td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9; color: #64748b;"><strong>Toelichting:</strong></td>
-                <td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9;">${additionalNotes}</td>
+                <td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9;">${safeNotes}</td>
               </tr>
               ` : ''}
             </table>
 
             <div style="margin-top: 25px; text-align: center;">
-              <a href="mailto:${email}?subject=Uw%20Kredietaanvraag%20${referenceCode}%20-%20Snel%20Krediet" style="background-color: #0F4C81; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: bold; display: inline-block;">
-                Beantwoord Kredietnemer (${email})
+              <a href="mailto:${safeEmail}?subject=Uw%20Kredietaanvraag%20${referenceCode}%20-%20Snel%20Krediet" style="background-color: #0F4C81; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: bold; display: inline-block;">
+                Beantwoord Kredietnemer (${safeEmail})
               </a>
             </div>
           </div>
@@ -372,7 +495,7 @@ app.post('/api/loan-application', async (req: Request, res: Response) => {
 
             <!-- Body Content -->
             <div style="padding: 24px 28px;">
-              <h2 style="color: #0F4C81; font-size: 18px; margin-top: 0;">Beste ${fullName},</h2>
+              <h2 style="color: #0F4C81; font-size: 18px; margin-top: 0;">Beste ${safeName},</h2>
               <p style="font-size: 14px; color: #334155;">
                 Hartelijk dank voor uw aanvraag bij <strong>Snel Krediet</strong>. Wij bevestigen de goede ontvangst van uw vrijblijvende kredietaanvraag.
               </p>
@@ -401,6 +524,14 @@ app.post('/api/loan-application', async (req: Request, res: Response) => {
                     <td style="padding: 4px 0; color: #64748b;">Vast JKP:</td>
                     <td style="padding: 4px 0; font-weight: bold; color: #0284c7; text-align: right;">${jkp || 6.49}%</td>
                   </tr>
+                  <tr>
+                    <td style="padding: 4px 0; color: #64748b;">Land van verblijf:</td>
+                    <td style="padding: 4px 0; font-weight: 600; text-align: right;">${safeCountry}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 4px 0; color: #64748b;">Telefoonnummer:</td>
+                    <td style="padding: 4px 0; font-weight: 600; text-align: right;">${safePhone}</td>
+                  </tr>
                 </table>
               </div>
 
@@ -408,10 +539,10 @@ app.post('/api/loan-application', async (req: Request, res: Response) => {
               <h4 style="color: #0F4C81; font-size: 14px; margin: 22px 0 10px;">Wat gebeurt er nu?</h4>
               <ol style="padding-left: 20px; font-size: 13px; color: #334155; margin: 0 0 20px;">
                 <li style="margin-bottom: 8px;">
-                  <strong>Dossieranalyse:</strong> Een erkende kredietadviseur van ons kantoor in Brussel analyseert uw aanvraag vertrouwelijk en volgens de Belgische kredietnormen.
+                  <strong>Dossieranalyse:</strong> Een erkende kredietadviseur van ons kantoor in Brussel analyseert uw aanvraag vertrouwelijk en volgens de geldende kredietnormen.
                 </li>
                 <li style="margin-bottom: 8px;">
-                  <strong>Reactie binnen 24 uur:</strong> Wij nemen binnen 24 werkuren contact met u op (telefonisch of per e-mail) met een voorlopig besluit of een concreet kredietvoorstel.
+                  <strong>Reactie binnen 24 uur:</strong> Wij nemen binnen 24 werkuren contact met u op (telefonisch op ${safePhone} of per e-mail) met een voorlopig besluit of een concreet kredietvoorstel.
                 </li>
                 <li style="margin-bottom: 8px;">
                   <strong>100% Vrijblijvend:</strong> U bent tot niets verplicht. Pas na ondertekening van een bindend kredietaanbod en wederzijds akkoord wordt uw krediet definitief.
@@ -452,8 +583,10 @@ app.post('/api/loan-application', async (req: Request, res: Response) => {
     console.log(`[Email] Admin notification sent for loan application ${referenceCode} (${email})`);
 
     // Send applicant confirmation
+    let applicantConfirmationSent = false;
     try {
       await transporter.sendMail(applicantConfirmationMail);
+      applicantConfirmationSent = true;
       console.log(`[Email] Confirmation email sent to applicant ${email} for application ${referenceCode}`);
     } catch (applErr: any) {
       console.error(`[Email Warning] Could not send confirmation to applicant ${email}:`, applErr.message);
@@ -462,6 +595,7 @@ app.post('/api/loan-application', async (req: Request, res: Response) => {
     return res.json({
       success: true,
       reference: referenceCode,
+      applicantConfirmationSent,
       message: 'Uw kredietaanvraag is succesvol ontvangen. U ontvangt een bevestiging per e-mail.',
     });
   } catch (error: any) {

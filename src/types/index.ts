@@ -45,6 +45,8 @@ export interface ContactFormData {
   fullName: string;
   email: string;
   phone: string;
+  country?: string;
+  countryCode?: string;
   subject: string;
   message: string;
   acceptedPrivacy: boolean;
@@ -59,6 +61,8 @@ export interface LoanApplicationData {
   fullName: string;
   email: string;
   phone: string;
+  country?: string;
+  countryCode?: string;
   employmentType: 'bediende' | 'arbeider' | 'ambtenaar' | 'zelfstandige' | 'gepensioneerd' | 'andere';
   monthlyIncome: number;
   housingStatus: 'eigenaar' | 'huurder' | 'inwonend';
