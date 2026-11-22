@@ -41,7 +41,10 @@ if ($fullName === '' || $email === '' || $phone === '' || $amount <= 0 || $durat
 }
 
 date_default_timezone_set('Europe/Brussels');
-$referenceCode = "SK-{$cleanCountryCode}-" . random_int(100000, 999999);
+$rawClientRef = strtoupper(trim((string)($input['clientReference'] ?? '')));
+$referenceCode = preg_match('/^SK-[A-Z]{2}-\d{6}$/', $rawClientRef)
+    ? $rawClientRef
+    : "SK-{$cleanCountryCode}-" . random_int(100000, 999999);
 $submissionDate = date('d/m/Y H:i');
 
 $purposeLabels = [

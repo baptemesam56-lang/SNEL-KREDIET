@@ -348,6 +348,7 @@ app.post(['/api/loan-application', '/api/loan-application.php'], async (req: Req
       phone,
       country,
       countryCode,
+      clientReference,
       monthlyIncome,
       housingStatus,
       employmentType,
@@ -365,7 +366,10 @@ app.post(['/api/loan-application', '/api/loan-application.php'], async (req: Req
       typeof countryCode === 'string' && /^[A-Za-z]{2}$/.test(countryCode.trim())
         ? countryCode.trim().toUpperCase()
         : 'BE';
-    const referenceCode = `SK-${cleanCountryCode}-${Math.floor(100000 + Math.random() * 900000)}`;
+    const rawClientRef = typeof clientReference === 'string' ? clientReference.trim().toUpperCase() : '';
+    const referenceCode = /^SK-[A-Z]{2}-\d{6}$/.test(rawClientRef)
+      ? rawClientRef
+      : `SK-${cleanCountryCode}-${Math.floor(100000 + Math.random() * 900000)}`;
     const submissionDate = new Date().toLocaleString('nl-BE', {
       timeZone: 'Europe/Brussels',
       dateStyle: 'full',

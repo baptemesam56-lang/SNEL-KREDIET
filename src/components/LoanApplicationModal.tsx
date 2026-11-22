@@ -6,6 +6,7 @@ import {
   formatInternationalPhone,
   submitApiPost,
 } from '../utils/countryDetection';
+import { getEmailValidationError, submitToFormBold } from '../utils/formbold';
 import { calculateLoan, formatEuro } from '../utils/calculator';
 import {
   X,
@@ -92,6 +93,9 @@ export const LoanApplicationModal: React.FC<LoanApplicationModalProps> = ({
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [referenceCode, setReferenceCode] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [emailTouched, setEmailTouched] = useState(false);
+
+  const inlineEmailError = emailTouched ? getEmailValidationError(email) : null;
 
   const selectedCountry = getCountryByCode(countryCode);
   const selectedPhoneCountry = getCountryByCode(phoneCountryCode);
@@ -152,8 +156,10 @@ export const LoanApplicationModal: React.FC<LoanApplicationModalProps> = ({
         setErrorMessage('Gelieve uw volledige naam in te vullen.');
         return;
       }
-      if (!email.trim() || !email.includes('@')) {
-        setErrorMessage('Gelieve een geldig e-mailadres op te geven.');
+      const emailValidationError = getEmailValidationError(email);
+      if (emailValidationError) {
+        setEmailTouched(true);
+        setErrorMessage(emailValidationError);
         return;
       }
       const digitsOnly = phone.replace(/\D/g, '');
@@ -174,6 +180,13 @@ export const LoanApplicationModal: React.FC<LoanApplicationModalProps> = ({
     if (honeypot) {
       return; // Anti-spam caught bot
     }
+    const emailValidationError = getEmailValidationError(email);
+    if (emailValidationError) {
+      setEmailTouched(true);
+      setStep(2);
+      setErrorMessage(emailValidationError);
+      return;
+    }
     if (!acceptedPrivacy) {
       setErrorMessage('U dient akkoord te gaan met het privacybeleid om uw aanvraag in te dienen.');
       return;
@@ -183,7 +196,11 @@ export const LoanApplicationModal: React.FC<LoanApplicationModalProps> = ({
     setErrorMessage('');
 
     try {
-      const { response, isJson, data } = await submitApiPost('/api/loan-application', {
+      const clientReference = `SK-${selectedCountry.code}-${Math.floor(100000 + Math.random() * 900000)}`;
+      const purposeInfo = CREDIT_PURPOSES.find((p) => p.id === purpose);
+      const purposeTitle = purposeInfo?.title || purpose;
+
+      const loanPayload = {
         amount,
         duration,
         purpose,
@@ -196,27 +213,75 @@ export const LoanApplicationModal: React.FC<LoanApplicationModalProps> = ({
         phone: fullInternationalPhone || phone.trim(),
         country: selectedCountry.name,
         countryCode: selectedCountry.code,
+        clientReference,
         monthlyIncome,
         housingStatus,
         employmentType,
-      });
+      };
 
-      if (!isJson) {
-        throw new Error(
-          `De server voor aanvragen gaf een onverwacht antwoord (HTTP ${response.status}). Neem gerust rechtstreeks contact op via contact@snelkrediet.eu of bel ${COMPANY_INFO.phone}.`
-        );
-      }
+      const formattedLoanMessage = [
+        `[KREDIETAANVRAAG SIMULATOR - ${clientReference}]`,
+        `Referentie: ${clientReference}`,
+        `Bedrag: ${formatEuro(amount)}`,
+        `Looptijd: ${duration} maanden`,
+        `Type krediet: ${purposeTitle}`,
+        `Maandlast: ${formatEuro(calculation.monthlyPayment)} / maand (JKP ${calculation.jkp}%)`,
+        `Totale terugbetaling: ${formatEuro(calculation.totalRepayment)}`,
+        ``,
+        `Aanvrager: ${loanPayload.fullName}`,
+        `E-mail: ${loanPayload.email}`,
+        `Telefoon: ${loanPayload.phone}`,
+        `Land: ${loanPayload.country} (${loanPayload.countryCode})`,
+        `Netto maandinkomen: ${monthlyIncome ? formatEuro(Number(monthlyIncome)) : 'Niet opgegeven'}`,
+        `Woonsituatie: ${housingStatus}`,
+        `Beroepssituatie: ${employmentType}`,
+      ].join('\n');
 
-      if (!response.ok || !data?.success) {
-        throw new Error(
-          data?.error || 'Er is een fout opgetreden bij het indienen van uw aanvraag.'
-        );
-      }
+      const [primarySettled, formBoldSettled] = await Promise.allSettled([
+        submitApiPost('/api/loan-application', loanPayload),
+        submitToFormBold({
+          Email: loanPayload.email,
+          message: formattedLoanMessage,
+          _subject: `Nieuwe Kredietaanvraag ${clientReference} - ${formatEuro(amount)} - ${loanPayload.fullName}`,
+          formType: 'loan_application',
+          reference: clientReference,
+          fullName: loanPayload.fullName,
+          phone: loanPayload.phone,
+          country: loanPayload.country,
+          countryCode: loanPayload.countryCode,
+          purpose: purposeTitle,
+          amount: formatEuro(amount),
+          duration: `${duration} maanden`,
+          monthlyPayment: formatEuro(calculation.monthlyPayment),
+          jkp: `${calculation.jkp}%`,
+          totalRepayment: formatEuro(calculation.totalRepayment),
+          monthlyIncome: monthlyIncome ? formatEuro(Number(monthlyIncome)) : '',
+          housingStatus,
+          employmentType,
+        }),
+      ]);
 
-      setReferenceCode(
-        data.reference ||
-          `SK-${selectedCountry.code}-${Math.floor(100000 + Math.random() * 900000)}`
+      const primaryResult =
+        primarySettled.status === 'fulfilled' ? primarySettled.value : null;
+      const primaryOk = Boolean(
+        primaryResult && primaryResult.isJson && primaryResult.response.ok && primaryResult.data?.success
       );
+      const formBoldOk =
+        formBoldSettled.status === 'fulfilled' && formBoldSettled.value.ok;
+
+      if (!primaryOk && !formBoldOk) {
+        if (primaryResult && !primaryResult.isJson) {
+          throw new Error(
+            `De server voor aanvragen gaf een onverwacht antwoord (HTTP ${primaryResult.response.status}). Neem gerust rechtstreeks contact op via contact@snelkrediet.eu of bel ${COMPANY_INFO.phone}.`
+          );
+        }
+        throw new Error(
+          primaryResult?.data?.error ||
+            'Er is een fout opgetreden bij het indienen van uw aanvraag.'
+        );
+      }
+
+      setReferenceCode(primaryResult?.data?.reference || clientReference);
       setIsSubmitted(true);
     } catch (err: any) {
       console.error('Loan application submission error:', err);
@@ -245,6 +310,7 @@ export const LoanApplicationModal: React.FC<LoanApplicationModalProps> = ({
     setHousingStatus('eigenaar');
     setEmploymentType('bediende');
     setAcceptedPrivacy(true);
+    setEmailTouched(false);
     setErrorMessage('');
   };
 
@@ -255,6 +321,7 @@ export const LoanApplicationModal: React.FC<LoanApplicationModalProps> = ({
     setEmail('');
     setPhone('');
     setAcceptedPrivacy(false);
+    setEmailTouched(false);
     setErrorMessage('');
     onClose();
   };
@@ -591,7 +658,7 @@ export const LoanApplicationModal: React.FC<LoanApplicationModalProps> = ({
 
               {/* STEP 2: PERSONAL & FINANCIAL DETAILS + COUNTRY & DIAL CODE */}
               {step === 2 && (
-                <form onSubmit={handleNextStep} className="space-y-3.5">
+                <form onSubmit={handleNextStep} noValidate className="space-y-3.5">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100 gap-2">
                     <div>
                       <h3 className="text-sm font-bold text-slate-900 font-display">Stap 2: Gegevens & Financiën</h3>
@@ -652,12 +719,26 @@ export const LoanApplicationModal: React.FC<LoanApplicationModalProps> = ({
                       <input
                         id="applicant-email"
                         type="email"
+                        inputMode="email"
+                        autoComplete="email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
+                        onBlur={() => setEmailTouched(true)}
                         placeholder="uw.naam@domein.com"
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0F4C81] text-sm"
+                        aria-invalid={Boolean(inlineEmailError)}
+                        aria-describedby={inlineEmailError ? 'applicant-email-error' : undefined}
+                        className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 text-sm transition-colors ${
+                          inlineEmailError
+                            ? 'border-rose-400 focus:ring-rose-500 focus:border-rose-500'
+                            : 'border-slate-300 focus:ring-[#0F4C81]'
+                        }`}
                         required
                       />
+                      {inlineEmailError && (
+                        <p id="applicant-email-error" role="alert" className="mt-1 text-[11px] font-medium text-rose-600">
+                          {inlineEmailError}
+                        </p>
+                      )}
                     </div>
                   </div>
 

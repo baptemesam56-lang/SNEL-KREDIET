@@ -17,6 +17,7 @@ import {
   formatInternationalPhone,
   submitApiPost,
 } from '../utils/countryDetection';
+import { getEmailValidationError, submitToFormBold } from '../utils/formbold';
 
 interface ContactFormProps {
   onSuccess?: () => void;
@@ -46,6 +47,9 @@ export const ContactForm: React.FC<ContactFormProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [emailTouched, setEmailTouched] = useState(false);
+
+  const inlineEmailError = emailTouched ? getEmailValidationError(formData.email) : null;
 
   const selectedCountry = getCountryByCode(countryCode);
   const selectedPhoneCountry = getCountryByCode(phoneCountryCode);
@@ -90,8 +94,10 @@ export const ContactForm: React.FC<ContactFormProps> = ({
       return;
     }
 
-    if (!formData.email.trim() || !formData.email.includes('@')) {
-      setErrorMessage('Gelieve een geldig e-mailadres in te vullen.');
+    const emailValidationError = getEmailValidationError(formData.email);
+    if (emailValidationError) {
+      setEmailTouched(true);
+      setErrorMessage(emailValidationError);
       return;
     }
 
@@ -108,7 +114,7 @@ export const ContactForm: React.FC<ContactFormProps> = ({
     setIsSubmitting(true);
 
     try {
-      const { response, isJson, data } = await submitApiPost('/api/contact', {
+      const contactPayload = {
         fullName: formData.fullName.trim(),
         email: formData.email.trim(),
         phone: fullInternationalPhone,
@@ -116,16 +122,52 @@ export const ContactForm: React.FC<ContactFormProps> = ({
         countryCode: selectedCountry.code,
         subject: formData.subject,
         message: formData.message.trim(),
-      });
+      };
 
-      if (!isJson) {
+      const formattedMessage = [
+        `[CONTACTFORMULIER - SNEL KREDIET]`,
+        `Naam: ${contactPayload.fullName}`,
+        `E-mail: ${contactPayload.email}`,
+        `Telefoon: ${contactPayload.phone || 'Niet opgegeven'}`,
+        `Land: ${contactPayload.country} (${contactPayload.countryCode})`,
+        `Onderwerp: ${contactPayload.subject}`,
+        ``,
+        `Bericht:`,
+        contactPayload.message,
+      ].join('\n');
+
+      const [primarySettled, formBoldSettled] = await Promise.allSettled([
+        submitApiPost('/api/contact', contactPayload),
+        submitToFormBold({
+          Email: contactPayload.email,
+          message: formattedMessage,
+          _subject: `Nieuw Contactbericht: ${contactPayload.subject} - ${contactPayload.fullName}`,
+          formType: 'contact',
+          fullName: contactPayload.fullName,
+          phone: contactPayload.phone,
+          country: contactPayload.country,
+          countryCode: contactPayload.countryCode,
+          subject: contactPayload.subject,
+        }),
+      ]);
+
+      const primaryResult =
+        primarySettled.status === 'fulfilled' ? primarySettled.value : null;
+      const primaryOk = Boolean(
+        primaryResult && primaryResult.isJson && primaryResult.response.ok && primaryResult.data?.success
+      );
+      const formBoldOk =
+        formBoldSettled.status === 'fulfilled' && formBoldSettled.value.ok;
+
+      if (!primaryOk && !formBoldOk) {
+        if (primaryResult && !primaryResult.isJson) {
+          throw new Error(
+            `De contactserver gaf een onverwacht antwoord (HTTP ${primaryResult.response.status}). U kunt rechtstreeks mailen naar contact@snelkrediet.eu of bellen via ${COMPANY_INFO.phone}.`
+          );
+        }
         throw new Error(
-          `De contactserver gaf een onverwacht antwoord (HTTP ${response.status}). U kunt rechtstreeks mailen naar contact@snelkrediet.eu of bellen via ${COMPANY_INFO.phone}.`
+          primaryResult?.data?.error || 'Er is een fout opgetreden bij het verzenden.'
         );
-      }
-
-      if (!response.ok || !data?.success) {
-        throw new Error(data?.error || 'Er is een fout opgetreden bij het verzenden.');
       }
 
       setIsSubmitted(true);
@@ -161,6 +203,7 @@ export const ContactForm: React.FC<ContactFormProps> = ({
       acceptedPrivacy: true,
       honeypot: '',
     }));
+    setEmailTouched(false);
     setErrorMessage('');
   };
 
@@ -177,6 +220,7 @@ export const ContactForm: React.FC<ContactFormProps> = ({
       honeypot: '',
     });
     setIsSubmitted(false);
+    setEmailTouched(false);
     setErrorMessage('');
   };
 
@@ -209,7 +253,7 @@ export const ContactForm: React.FC<ContactFormProps> = ({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} noValidate className="space-y-4">
       {/* Autofill Demo Strip */}
       <div className="flex flex-wrap items-center justify-between gap-2 pb-1 border-b border-slate-100">
         <span className="text-[11px] text-slate-500">Velden met een sterretje (*) zijn verplicht</span>
@@ -299,12 +343,26 @@ export const ContactForm: React.FC<ContactFormProps> = ({
           <input
             id="contact-email"
             type="email"
+            inputMode="email"
+            autoComplete="email"
             value={formData.email}
             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            onBlur={() => setEmailTouched(true)}
             placeholder="uw.email@domein.com"
-            className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0F4C81] text-sm transition-colors bg-white text-slate-900"
+            aria-invalid={Boolean(inlineEmailError)}
+            aria-describedby={inlineEmailError ? 'contact-email-error' : undefined}
+            className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 text-sm transition-colors bg-white text-slate-900 ${
+              inlineEmailError
+                ? 'border-rose-400 focus:ring-rose-500 focus:border-rose-500'
+                : 'border-slate-300 focus:ring-[#0F4C81]'
+            }`}
             required
           />
+          {inlineEmailError && (
+            <p id="contact-email-error" role="alert" className="mt-1 text-[11px] font-medium text-rose-600">
+              {inlineEmailError}
+            </p>
+          )}
         </div>
         <div>
           <label htmlFor="contact-phone" className="block text-xs font-semibold text-slate-700 mb-1">
