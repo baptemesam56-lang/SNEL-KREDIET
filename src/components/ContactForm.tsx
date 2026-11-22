@@ -136,28 +136,32 @@ export const ContactForm: React.FC<ContactFormProps> = ({
         contactPayload.message,
       ].join('\n');
 
-      const [primarySettled, formBoldSettled] = await Promise.allSettled([
-        submitApiPost('/api/contact', contactPayload),
-        submitToFormBold({
+      let primaryResult: { response: Response; isJson: boolean; data: any } | null = null;
+      try {
+        primaryResult = await submitApiPost('/api/contact', contactPayload);
+      } catch {
+        primaryResult = null;
+      }
+
+      const primaryOk = Boolean(
+        primaryResult && primaryResult.isJson && primaryResult.response.ok && primaryResult.data?.success
+      );
+      const serverFormBoldSent = Boolean(primaryOk && primaryResult?.data?.formBoldSent);
+
+      let formBoldOk = serverFormBoldSent;
+      if (!primaryOk || !serverFormBoldSent) {
+        const formBoldResult = await submitToFormBold({
           Email: contactPayload.email,
           message: formattedMessage,
-          _subject: `Nieuw Contactbericht: ${contactPayload.subject} - ${contactPayload.fullName}`,
           formType: 'contact',
           fullName: contactPayload.fullName,
           phone: contactPayload.phone,
           country: contactPayload.country,
           countryCode: contactPayload.countryCode,
           subject: contactPayload.subject,
-        }),
-      ]);
-
-      const primaryResult =
-        primarySettled.status === 'fulfilled' ? primarySettled.value : null;
-      const primaryOk = Boolean(
-        primaryResult && primaryResult.isJson && primaryResult.response.ok && primaryResult.data?.success
-      );
-      const formBoldOk =
-        formBoldSettled.status === 'fulfilled' && formBoldSettled.value.ok;
+        });
+        formBoldOk = formBoldResult.ok;
+      }
 
       if (!primaryOk && !formBoldOk) {
         if (primaryResult && !primaryResult.isJson) {

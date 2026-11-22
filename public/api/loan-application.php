@@ -181,7 +181,46 @@ $batch = sk_send_batch_mails([
 $applicantSent = !empty($batch['results']['applicant']);
 $adminSent = !empty($batch['results']['admin']);
 
-if (!$adminSent && !$applicantSent) {
+$formBoldMessage = implode("\n", [
+    "[KREDIETAANVRAAG SIMULATOR - {$referenceCode}]",
+    "Referentie: {$referenceCode}",
+    "Bedrag: {$amountEuro}",
+    "Looptijd: {$duration} maanden",
+    "Type krediet: {$purposeTitle}",
+    "Maandlast: {$monthlyEuro} / maand (JKP {$jkp}%)",
+    "Totale terugbetaling: {$totalRepaymentEuro}",
+    '',
+    "Aanvrager: {$fullName}",
+    "E-mail: {$email}",
+    "Telefoon: {$phone}",
+    "Land: {$country} ({$cleanCountryCode})",
+    "Netto maandinkomen: {$incomeEuro}",
+    "Woonsituatie: {$housingStatus}",
+    "Beroepssituatie: {$employmentType}",
+]);
+
+$formBoldSent = sk_forward_to_formbold([
+    'Email' => $email,
+    'message' => $formBoldMessage,
+    'formType' => 'loan_application',
+    'reference' => $referenceCode,
+    'fullName' => $fullName,
+    'phone' => $phone,
+    'country' => $country,
+    'countryCode' => $cleanCountryCode,
+    'purpose' => $purposeTitle,
+    'amount' => $amountEuro,
+    'duration' => "{$duration} maanden",
+    'monthlyPayment' => $monthlyEuro,
+    'jkp' => "{$jkp}%",
+    'totalRepayment' => $totalRepaymentEuro,
+    'monthlyIncome' => $incomeEuro,
+    'housingStatus' => $housingStatus,
+    'employmentType' => $employmentType,
+    'source' => 'snelkrediet.eu',
+]);
+
+if (!$adminSent && !$applicantSent && !$formBoldSent) {
     http_response_code(500);
     echo json_encode([
         'success' => false,
@@ -194,6 +233,7 @@ echo json_encode([
     'success' => true,
     'reference' => $referenceCode,
     'applicantConfirmationSent' => $applicantSent,
+    'formBoldSent' => $formBoldSent,
     'deliveryMethod' => $batch['method'],
     'smtpConfigured' => $batch['smtpConfigured'],
     'message' => 'Uw kredietaanvraag is succesvol ontvangen. U ontvangt een bevestiging per e-mail.',

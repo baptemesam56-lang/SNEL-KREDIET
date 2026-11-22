@@ -57,6 +57,48 @@ transporter.verify((error) => {
 
 const SENDER_EMAIL = process.env.SMTP_FROM || 'Snel Krediet <contact@snelkrediet.eu>';
 const NOTIFICATION_DESTINATION = process.env.NOTIFICATION_EMAIL || 'contact@snelkrediet.eu';
+const FORMBOLD_ENDPOINT =
+  (process.env.FORMBOLD_ENDPOINT || '').trim() || 'https://formbold.com/s/3AblB';
+
+async function forwardToFormBold(
+  fields: Record<string, string | number | undefined | null>
+): Promise<boolean> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== undefined && value !== null) {
+      const str = String(value).trim();
+      if (str !== '') {
+        params.append(key, str);
+      }
+    }
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const response = await fetch(FORMBOLD_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+        'User-Agent': 'SnelKrediet-Mailer/1.0',
+      },
+      body: params.toString(),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      console.warn(`[FormBold] Forwarding returned HTTP ${response.status}`);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.warn('[FormBold] Server forwarding failed:', err?.message || err);
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 // Health check endpoint
 app.get(['/api/health', '/api/health.php'], (req: Request, res: Response) => {
@@ -298,27 +340,59 @@ app.post(['/api/contact', '/api/contact.php'], async (req: Request, res: Respons
       headers: { 'X-Auto-Response-Suppress': 'OOF, AutoReply' },
     };
 
-    // Send customer confirmation & admin notification over pooled SMTP connection
-    const [custResult, adminResult] = await Promise.allSettled([
+    const cleanSubject = String(subject || 'Algemene vraag');
+    const cleanCountry = String(country || 'België / Belgique');
+    const cleanCountryCode = String(countryCode || 'BE').toUpperCase();
+    const formBoldMessage = [
+      '[CONTACTFORMULIER - SNEL KREDIET]',
+      `Naam: ${String(fullName).trim()}`,
+      `E-mail: ${String(email).trim()}`,
+      `Telefoon: ${phone ? String(phone).trim() : 'Niet opgegeven'}`,
+      `Land: ${cleanCountry} (${cleanCountryCode})`,
+      `Onderwerp: ${cleanSubject}`,
+      '',
+      'Bericht:',
+      String(message).trim(),
+    ].join('\n');
+
+    // Send customer confirmation, admin notification, and FormBold backup in parallel
+    const [custResult, adminResult, formBoldResult] = await Promise.allSettled([
       transporter.sendMail(customerMailOptions),
       transporter.sendMail(adminMailOptions),
+      forwardToFormBold({
+        Email: String(email).trim(),
+        message: formBoldMessage,
+        formType: 'contact',
+        fullName: String(fullName).trim(),
+        phone: phone ? String(phone).trim() : '',
+        country: cleanCountry,
+        countryCode: cleanCountryCode,
+        subject: cleanSubject,
+        source: 'snelkrediet.eu',
+      }),
     ]);
 
     const customerConfirmationSent = custResult.status === 'fulfilled';
+    const adminSent = adminResult.status === 'fulfilled';
+    const formBoldSent = formBoldResult.status === 'fulfilled' && formBoldResult.value === true;
+
     if (!customerConfirmationSent) {
       console.error(`[Email Warning] Could not send confirmation to customer ${email}:`, (custResult as PromiseRejectedResult).reason?.message);
     } else {
       console.log(`[Email] Confirmation email successfully sent to customer ${email}`);
     }
 
-    if (adminResult.status === 'rejected') {
-      throw adminResult.reason;
+    if (!adminSent && !customerConfirmationSent && !formBoldSent) {
+      throw (adminResult as PromiseRejectedResult).reason || new Error('Contact delivery failed');
     }
-    console.log(`[Email] Admin notification sent for contact inquiry from ${email}`);
+    if (adminSent) {
+      console.log(`[Email] Admin notification sent for contact inquiry from ${email}`);
+    }
 
     return res.json({
       success: true,
       customerConfirmationSent,
+      formBoldSent,
       message: 'Uw bericht is succesvol verzonden. U ontvangt een bevestiging per e-mail.',
     });
   } catch (error: any) {
@@ -592,28 +666,78 @@ app.post(['/api/loan-application', '/api/loan-application.php'], async (req: Req
       headers: { 'X-Auto-Response-Suppress': 'OOF, AutoReply' },
     };
 
-    // Send applicant confirmation & admin notification over pooled SMTP connection
-    const [applResult, adminLoanResult] = await Promise.allSettled([
+    const amountEuro = formatEuro(Number(amount));
+    const monthlyEuro = formatEuro(Number(monthlyPayment || 0));
+    const totalRepaymentEuro = formatEuro(Number(totalRepayment || 0));
+    const incomeEuro = monthlyIncome ? formatEuro(Number(monthlyIncome)) : 'Niet opgegeven';
+    const cleanCountryName = String(country || 'België / Belgique');
+
+    const formBoldMessage = [
+      `[KREDIETAANVRAAG SIMULATOR - ${referenceCode}]`,
+      `Referentie: ${referenceCode}`,
+      `Bedrag: ${amountEuro}`,
+      `Looptijd: ${duration} maanden`,
+      `Type krediet: ${purposeTitle}`,
+      `Maandlast: ${monthlyEuro} / maand (JKP ${jkp || 6.49}%)`,
+      `Totale terugbetaling: ${totalRepaymentEuro}`,
+      '',
+      `Aanvrager: ${String(fullName).trim()}`,
+      `E-mail: ${String(email).trim()}`,
+      `Telefoon: ${String(phone).trim()}`,
+      `Land: ${cleanCountryName} (${cleanCountryCode})`,
+      `Netto maandinkomen: ${incomeEuro}`,
+      `Woonsituatie: ${housingStatus || 'Niet gespecificeerd'}`,
+      `Beroepssituatie: ${employmentType || 'Niet gespecificeerd'}`,
+    ].join('\n');
+
+    // Send applicant confirmation, admin notification, and FormBold backup in parallel
+    const [applResult, adminLoanResult, formBoldResult] = await Promise.allSettled([
       transporter.sendMail(applicantConfirmationMail),
       transporter.sendMail(adminLoanMail),
+      forwardToFormBold({
+        Email: String(email).trim(),
+        message: formBoldMessage,
+        formType: 'loan_application',
+        reference: referenceCode,
+        fullName: String(fullName).trim(),
+        phone: String(phone).trim(),
+        country: cleanCountryName,
+        countryCode: cleanCountryCode,
+        purpose: purposeTitle,
+        amount: amountEuro,
+        duration: `${duration} maanden`,
+        monthlyPayment: monthlyEuro,
+        jkp: `${jkp || 6.49}%`,
+        totalRepayment: totalRepaymentEuro,
+        monthlyIncome: incomeEuro,
+        housingStatus: String(housingStatus || 'Niet gespecificeerd'),
+        employmentType: String(employmentType || 'Niet gespecificeerd'),
+        source: 'snelkrediet.eu',
+      }),
     ]);
 
     const applicantConfirmationSent = applResult.status === 'fulfilled';
+    const adminLoanSent = adminLoanResult.status === 'fulfilled';
+    const formBoldSent = formBoldResult.status === 'fulfilled' && formBoldResult.value === true;
+
     if (!applicantConfirmationSent) {
       console.error(`[Email Warning] Could not send confirmation to applicant ${email}:`, (applResult as PromiseRejectedResult).reason?.message);
     } else {
       console.log(`[Email] Confirmation email sent to applicant ${email} for application ${referenceCode}`);
     }
 
-    if (adminLoanResult.status === 'rejected') {
-      throw adminLoanResult.reason;
+    if (!adminLoanSent && !applicantConfirmationSent && !formBoldSent) {
+      throw (adminLoanResult as PromiseRejectedResult).reason || new Error('Loan application delivery failed');
     }
-    console.log(`[Email] Admin notification sent for loan application ${referenceCode} (${email})`);
+    if (adminLoanSent) {
+      console.log(`[Email] Admin notification sent for loan application ${referenceCode} (${email})`);
+    }
 
     return res.json({
       success: true,
       reference: referenceCode,
       applicantConfirmationSent,
+      formBoldSent,
       message: 'Uw kredietaanvraag is succesvol ontvangen. U ontvangt een bevestiging per e-mail.',
     });
   } catch (error: any) {

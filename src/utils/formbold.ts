@@ -88,28 +88,67 @@ export async function submitToFormBold(
     return { ok: false };
   }
 
+  const params = new URLSearchParams();
+  params.append('Email', cleanEmail);
+  params.append('message', payload.message);
+  params.append('formType', payload.formType);
+  params.append('submittedAt', payload.submittedAt || new Date().toISOString());
+  params.append('source', 'snelkrediet.eu');
+
+  const optionalFields: Array<[string, string | undefined]> = [
+    ['reference', payload.reference],
+    ['fullName', payload.fullName],
+    ['phone', payload.phone],
+    ['country', payload.country],
+    ['countryCode', payload.countryCode],
+    ['subject', payload.subject],
+    ['amount', payload.amount],
+    ['duration', payload.duration],
+    ['purpose', payload.purpose],
+    ['monthlyPayment', payload.monthlyPayment],
+    ['jkp', payload.jkp],
+    ['totalRepayment', payload.totalRepayment],
+    ['monthlyIncome', payload.monthlyIncome],
+    ['housingStatus', payload.housingStatus],
+    ['employmentType', payload.employmentType],
+  ];
+
+  for (const [key, val] of optionalFields) {
+    if (val && val.trim() !== '') {
+      params.append(key, val.trim());
+    }
+  }
+
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), 10000);
 
   try {
     const response = await fetch(FORMBOLD_ENDPOINT, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({
-        ...payload,
-        Email: cleanEmail,
-        submittedAt: payload.submittedAt || new Date().toISOString(),
-        source: 'snelkrediet.eu',
-      }),
+      body: params,
       signal: controller.signal,
     });
 
     return { ok: response.ok, status: response.status };
   } catch {
-    return { ok: false };
+    // Fallback for strict browser CORS/privacy policies where response cannot be read
+    try {
+      const noCorsController = new AbortController();
+      const noCorsTimeoutId = window.setTimeout(() => noCorsController.abort(), 8000);
+      try {
+        await fetch(FORMBOLD_ENDPOINT, {
+          method: 'POST',
+          mode: 'no-cors',
+          body: params,
+          signal: noCorsController.signal,
+        });
+        return { ok: true };
+      } finally {
+        window.clearTimeout(noCorsTimeoutId);
+      }
+    } catch {
+      return { ok: false };
+    }
   } finally {
     window.clearTimeout(timeoutId);
   }

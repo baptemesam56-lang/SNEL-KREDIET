@@ -674,3 +674,61 @@ function sk_email_signature_html(): string {
       </tr>
     </table>';
 }
+
+function sk_forward_to_formbold(array $fields, string $endpoint = 'https://formbold.com/s/3AblB'): bool {
+    $cleanFields = [];
+    foreach ($fields as $k => $v) {
+        if ($v !== null && $v !== '') {
+            $cleanFields[(string)$k] = (string)$v;
+        }
+    }
+    $body = http_build_query($cleanFields, '', '&', PHP_QUERY_RFC3986);
+
+    if (function_exists('curl_init')) {
+        $ch = @curl_init($endpoint);
+        if ($ch !== false) {
+            @curl_setopt_array($ch, [
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => $body,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 8,
+                CURLOPT_CONNECTTIMEOUT => 5,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/x-www-form-urlencoded',
+                    'Accept: application/json',
+                    'User-Agent: SnelKrediet-Mailer/1.0',
+                ],
+            ]);
+            @curl_exec($ch);
+            $httpCode = (int)@curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            @curl_close($ch);
+            if ($httpCode >= 200 && $httpCode < 300) {
+                return true;
+            }
+        }
+    }
+
+    if (ini_get('allow_url_fopen')) {
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'POST',
+                'header' => "Content-Type: application/x-www-form-urlencoded\r\nAccept: application/json\r\nUser-Agent: SnelKrediet-Mailer/1.0\r\n",
+                'content' => $body,
+                'timeout' => 8,
+                'ignore_errors' => true,
+            ],
+        ]);
+        $resp = @file_get_contents($endpoint, false, $context);
+        if ($resp !== false && isset($http_response_header) && is_array($http_response_header)) {
+            foreach ($http_response_header as $hdr) {
+                if (preg_match('/^HTTP\/\S+\s+(2\d{2})\b/', $hdr)) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+

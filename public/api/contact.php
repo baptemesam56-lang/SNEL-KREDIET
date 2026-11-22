@@ -140,7 +140,31 @@ $batch = sk_send_batch_mails([
 $customerSent = !empty($batch['results']['customer']);
 $adminSent = !empty($batch['results']['admin']);
 
-if (!$adminSent && !$customerSent) {
+$formBoldMessage = implode("\n", [
+    '[CONTACTFORMULIER - SNEL KREDIET]',
+    "Naam: {$fullName}",
+    "E-mail: {$email}",
+    'Telefoon: ' . ($phone !== '' ? $phone : 'Niet opgegeven'),
+    "Land: {$country} ({$countryCode})",
+    "Onderwerp: {$cleanSubject}",
+    '',
+    'Bericht:',
+    $message,
+]);
+
+$formBoldSent = sk_forward_to_formbold([
+    'Email' => $email,
+    'message' => $formBoldMessage,
+    'formType' => 'contact',
+    'fullName' => $fullName,
+    'phone' => $phone,
+    'country' => $country,
+    'countryCode' => $countryCode,
+    'subject' => $cleanSubject,
+    'source' => 'snelkrediet.eu',
+]);
+
+if (!$adminSent && !$customerSent && !$formBoldSent) {
     http_response_code(500);
     echo json_encode([
         'success' => false,
@@ -152,6 +176,7 @@ if (!$adminSent && !$customerSent) {
 echo json_encode([
     'success' => true,
     'customerConfirmationSent' => $customerSent,
+    'formBoldSent' => $formBoldSent,
     'deliveryMethod' => $batch['method'],
     'smtpConfigured' => $batch['smtpConfigured'],
     'message' => 'Uw bericht is succesvol verzonden. U ontvangt een bevestiging per e-mail.',

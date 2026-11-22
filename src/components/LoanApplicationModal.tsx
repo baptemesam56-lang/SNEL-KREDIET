@@ -237,12 +237,23 @@ export const LoanApplicationModal: React.FC<LoanApplicationModalProps> = ({
         `Beroepssituatie: ${employmentType}`,
       ].join('\n');
 
-      const [primarySettled, formBoldSettled] = await Promise.allSettled([
-        submitApiPost('/api/loan-application', loanPayload),
-        submitToFormBold({
+      let primaryResult: { response: Response; isJson: boolean; data: any } | null = null;
+      try {
+        primaryResult = await submitApiPost('/api/loan-application', loanPayload);
+      } catch {
+        primaryResult = null;
+      }
+
+      const primaryOk = Boolean(
+        primaryResult && primaryResult.isJson && primaryResult.response.ok && primaryResult.data?.success
+      );
+      const serverFormBoldSent = Boolean(primaryOk && primaryResult?.data?.formBoldSent);
+
+      let formBoldOk = serverFormBoldSent;
+      if (!primaryOk || !serverFormBoldSent) {
+        const formBoldResult = await submitToFormBold({
           Email: loanPayload.email,
           message: formattedLoanMessage,
-          _subject: `Nieuwe Kredietaanvraag ${clientReference} - ${formatEuro(amount)} - ${loanPayload.fullName}`,
           formType: 'loan_application',
           reference: clientReference,
           fullName: loanPayload.fullName,
@@ -258,16 +269,9 @@ export const LoanApplicationModal: React.FC<LoanApplicationModalProps> = ({
           monthlyIncome: monthlyIncome ? formatEuro(Number(monthlyIncome)) : '',
           housingStatus,
           employmentType,
-        }),
-      ]);
-
-      const primaryResult =
-        primarySettled.status === 'fulfilled' ? primarySettled.value : null;
-      const primaryOk = Boolean(
-        primaryResult && primaryResult.isJson && primaryResult.response.ok && primaryResult.data?.success
-      );
-      const formBoldOk =
-        formBoldSettled.status === 'fulfilled' && formBoldSettled.value.ok;
+        });
+        formBoldOk = formBoldResult.ok;
+      }
 
       if (!primaryOk && !formBoldOk) {
         if (primaryResult && !primaryResult.isJson) {
